@@ -164,7 +164,6 @@ final class DemoEngine: ObservableObject {
         guard isActive else { return }
         isActive = false
         DemoEngine.isPollerPaused = false
-        GithubPoller.shared.triggerPulseNow()
 
         demoTask?.cancel()
         demoTask = nil

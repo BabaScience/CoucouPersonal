@@ -97,32 +97,14 @@ struct SettingsView: View {
     @State private var connectingLMStudio:  Bool = false
 
     // Integration keys
-    @State private var resendKey: String    = KeychainStore.shared.get("resend-api-key")  ?? ""
-    @State private var resendFrom: String   = KeychainStore.shared.get("resend-from")     ?? ""
-    @State private var n8nUrl: String       = KeychainStore.shared.get("n8n-url")         ?? ""
-    @State private var n8nKey: String       = KeychainStore.shared.get("n8n-api-key")     ?? ""
-    @State private var vercelToken: String  = KeychainStore.shared.get("vercel-token")    ?? ""
-    @State private var githubToken: String  = KeychainStore.shared.get("github-token")    ?? ""
-    @State private var stripeKey: String    = KeychainStore.shared.get("stripe-api-key")  ?? ""
-    @State private var calcomKey: String    = KeychainStore.shared.get("calcom-api-key")  ?? ""
-    @State private var notionKey: String    = KeychainStore.shared.get("notion-api-key")  ?? ""
-    @AppStorage(CryptoSettings.exchangeKey)     private var cryptoExchange = CryptoExchange.coinbase.rawValue
-    @AppStorage(CryptoSettings.currencyKey)     private var cryptoCurrency = "EUR"
-    @AppStorage(CryptoSettings.coinsKey)        private var cryptoCoins = CryptoSettings.defaultCoins
-    @AppStorage(CryptoSettings.alertKey)        private var cryptoAlert = false
-    @AppStorage(CryptoSettings.alertPercentKey) private var cryptoAlertPercent = 5.0
 
     // Hotkey
     @State private var hotkeyFlags: UInt    = AppState.shared.hotkeyFlags
     @State private var hotkeyCode: UInt16   = AppState.shared.hotkeyCode
 
     // Vercel project filter
-    @State private var vercelProjects: [String] = []
-    @State private var loadingVercel: Bool = false
 
     // n8n workflow filter
-    @State private var n8nWorkflows: [String] = []
-    @State private var loadingN8n: Bool = false
 
     // Bindings in minutes for the absence field
     private var absenceMinutes: Binding<Double> {
@@ -1239,148 +1221,8 @@ struct SettingsView: View {
     @ViewBuilder private var integrationsSection: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 14) {
-
-                // Resend
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
-                        Circle().fill(Color(hex: "#22C55E")).frame(width: 8, height: 8)
-                        Text("Resend").font(.system(size: 12, weight: .semibold))
-                    }
-                    SecureField("API key  (re_…)", text: $resendKey)
-                        .textFieldStyle(.roundedBorder)
-                    TextField("From address  (you@yourdomain.com)", text: $resendFrom)
-                        .textFieldStyle(.roundedBorder)
-                }
-
-                // n8n
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
-                        Circle().fill(Color(hex: "#F29B38")).frame(width: 8, height: 8)
-                        Text("n8n").font(.system(size: 12, weight: .semibold))
-                    }
-                    TextField("Instance URL  (https://…)", text: $n8nUrl)
-                        .textFieldStyle(.roundedBorder)
-                    SecureField("API key", text: $n8nKey)
-                        .textFieldStyle(.roundedBorder)
-                    IntegrationFilterRow(
-                        label: String(localized: "integrations.workflows"),
-                        items: n8nWorkflows,
-                        filter: $state.n8nWorkflowFilter,
-                        loading: loadingN8n,
-                        onLoad: loadN8nWorkflows
-                    )
-                }
-
-                // Vercel
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
-                        Circle().fill(Color(hex: "#7C5CFF")).frame(width: 8, height: 8)
-                        Text("Vercel").font(.system(size: 12, weight: .semibold))
-                    }
-                    SecureField("Token", text: $vercelToken)
-                        .textFieldStyle(.roundedBorder)
-                    IntegrationFilterRow(
-                        label: String(localized: "integrations.projects"),
-                        items: vercelProjects,
-                        filter: $state.vercelProjectFilter,
-                        loading: loadingVercel,
-                        onLoad: loadVercelProjects
-                    )
-                }
-
-                // GitHub
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
-                        Circle().fill(Color(hex: "#F4505E")).frame(width: 8, height: 8)
-                        Text("GitHub").font(.system(size: 12, weight: .semibold))
-                    }
-                    SecureField("Personal Access Token", text: $githubToken)
-                        .textFieldStyle(.roundedBorder)
-                    Text(String(localized: "integrations.github.token-hint"))
-                        .font(.system(size: 10))
-                        .foregroundColor(Color(hex: "#8E939C"))
-                }
-
-                // Stripe
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
-                        Circle().fill(Color(hex: "#0570DE")).frame(width: 8, height: 8)
-                        Text("Stripe").font(.system(size: 12, weight: .semibold))
-                    }
-                    SecureField("Secret key  (sk_live_… or sk_test_…)", text: $stripeKey)
-                        .textFieldStyle(.roundedBorder)
-                }
-
-                // Cal.com
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
-                        Circle().fill(Color(hex: "#C9956A")).frame(width: 8, height: 8)
-                        Text("Cal.com").font(.system(size: 12, weight: .semibold))
-                    }
-                    SecureField("API key  (cal_live_…)", text: $calcomKey)
-                        .textFieldStyle(.roundedBorder)
-                }
-
-                // Notion
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
-                        Circle().fill(Color(hex: "#E8E8E8")).frame(width: 8, height: 8)
-                        Text("Notion").font(.system(size: 12, weight: .semibold))
-                    }
-                    SecureField("Integration token  (secret_…)", text: $notionKey)
-                        .textFieldStyle(.roundedBorder)
-                }
-
-                // Crypto: public prices, no key. Changes apply at once.
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
-                        Circle().fill(Color(hex: "#F7931A")).frame(width: 8, height: 8)
-                        Text(verbatim: "Crypto").font(.system(size: 12, weight: .semibold))
-                    }
-                    Picker(String(localized: "crypto.exchange"), selection: $cryptoExchange) {
-                        ForEach(CryptoExchange.allCases, id: \.rawValue) { ex in
-                            Text(verbatim: ex.name).tag(ex.rawValue)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    Picker(String(localized: "crypto.currency"), selection: $cryptoCurrency) {
-                        Text(verbatim: "EUR €").tag("EUR")
-                        Text(verbatim: "USD $").tag("USD")
-                    }
-                    .pickerStyle(.segmented)
-                    TextField(String(localized: "crypto.coins-placeholder"), text: $cryptoCoins)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit { CryptoController.shared.settingsChanged() }
-                    HStack(spacing: 8) {
-                        Toggle(String(format: String(localized: "crypto.alert %lld"), Int64(cryptoAlertPercent)),
-                               isOn: $cryptoAlert)
-                        if cryptoAlert {
-                            Stepper("", value: $cryptoAlertPercent, in: 1...50, step: 1)
-                                .labelsHidden()
-                        }
-                    }
-                    Text(String(localized: "crypto.hint"))
-                        .font(.system(size: 10))
-                        .foregroundColor(Color(hex: "#8E939C"))
-                }
-                .onChange(of: cryptoExchange) { _, _ in CryptoController.shared.settingsChanged() }
-                .onChange(of: cryptoCurrency) { _, _ in CryptoController.shared.settingsChanged() }
-
-                // Portfolio: exchange accounts + wallets.
-                PortfolioSettingsSection()
-                    .padding(.top, 4)
-
-                #if !APPSTORE
                 // WhatsApp through a local gateway: its own fields, saved by its own button.
                 WhatsAppSettingsSection()
-                    .padding(.top, 4)
-                #endif
-
-                Button(String(localized: "integrations.save")) {
-                    saveIntegrations()
-                    CryptoController.shared.settingsChanged()
-                }
-                    .buttonStyle(.borderedProminent)
             }
             .padding(6)
         }
@@ -2077,33 +1919,6 @@ struct SettingsView: View {
     }
     #endif
 
-    private func saveIntegrations() {
-        saveKey("resend-api-key",  value: resendKey)
-        saveKey("resend-from",     value: resendFrom)
-        saveKey("n8n-url",         value: n8nUrl)
-        saveKey("n8n-api-key",     value: n8nKey)
-        saveKey("vercel-token",    value: vercelToken)
-
-        // Detect GitHub token changes before writing
-        let prevGithubToken = KeychainStore.shared.get("github-token")
-        saveKey("github-token", value: githubToken)
-        let nextGithubToken = KeychainStore.shared.get("github-token")
-        if nextGithubToken != prevGithubToken {
-            AppState.shared.githubPulse = nil
-            AppState.shared.githubActivity = nil
-            if nextGithubToken == nil { AppState.shared.githubStats = nil }
-            if nextGithubToken != nil {
-                GithubPoller.shared.triggerPulseNow()
-                GithubPoller.shared.refreshActivityIfStale()
-            }
-        }
-
-        saveKey("stripe-api-key",  value: stripeKey)
-        saveKey("calcom-api-key",  value: calcomKey)
-        saveKey("notion-api-key",  value: notionKey)
-        statusMessage = String(localized: "status.integrations-saved")
-    }
-
     private func saveKey(_ key: String, value: String) {
         if value.isEmpty {
             KeychainStore.shared.remove(key)
@@ -2114,72 +1929,7 @@ struct SettingsView: View {
 
     // MARK: - Vercel project list
 
-    private func loadVercelProjects() {
-        guard let token = KeychainStore.shared.get("vercel-token") else {
-            statusMessage = "❌ Save Vercel token first."
-            return
-        }
-        loadingVercel = true
-        guard let url = URL(string: "https://api.vercel.com/v9/projects?limit=100") else { return }
-        var req = URLRequest(url: url, timeoutInterval: 10)
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        URLSession.shared.dataTask(with: req) { data, response, _ in
-            let names: [String]
-            if let data,
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let projects = json["projects"] as? [[String: Any]] {
-                names = projects.compactMap { $0["name"] as? String }.sorted()
-            } else {
-                names = []
-            }
-            DispatchQueue.main.async {
-                self.vercelProjects = names
-                self.loadingVercel = false
-                if names.isEmpty { self.statusMessage = "❌ No Vercel projects found." }
-            }
-        }.resume()
-    }
-
     // MARK: - n8n workflow list
-
-    private func loadN8nWorkflows() {
-        guard let apiKey  = KeychainStore.shared.get("n8n-api-key"),
-              let rawBase = KeychainStore.shared.get("n8n-url") else {
-            statusMessage = "❌ Save n8n URL and API key first."
-            return
-        }
-        loadingN8n = true
-        let base = rawBase.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let urls = ["\(base)/api/v1/workflows?limit=100", "\(base)/rest/workflows?limit=100"]
-        fetchN8nWorkflows(urls: urls, apiKey: apiKey, idx: 0)
-    }
-
-    private func fetchN8nWorkflows(urls: [String], apiKey: String, idx: Int) {
-        guard idx < urls.count, let url = URL(string: urls[idx]) else {
-            DispatchQueue.main.async { self.loadingN8n = false; self.statusMessage = "❌ No n8n workflows found." }
-            return
-        }
-        var req = URLRequest(url: url, timeoutInterval: 10)
-        req.setValue(apiKey, forHTTPHeaderField: "X-N8N-API-KEY")
-        URLSession.shared.dataTask(with: req) { data, response, _ in
-            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-            guard let data, code == 200 else {
-                DispatchQueue.main.async { self.fetchN8nWorkflows(urls: urls, apiKey: apiKey, idx: idx + 1) }
-                return
-            }
-            let items: [[String: Any]]
-            if let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-               let arr = obj["data"] as? [[String: Any]] { items = arr }
-            else if let arr = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] { items = arr }
-            else { items = [] }
-            let names = items.compactMap { $0["name"] as? String }.sorted()
-            DispatchQueue.main.async {
-                self.n8nWorkflows = names
-                self.loadingN8n = false
-                if names.isEmpty { self.statusMessage = "❌ No n8n workflows found." }
-            }
-        }.resume()
-    }
 
     @ViewBuilder
     private func pillRow(_ def: PillDefinition) -> some View {

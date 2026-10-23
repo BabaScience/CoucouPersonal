@@ -106,20 +106,6 @@ enum PillCatalog {
         .init(id: "ai_lmstudio",         name: "LM Studio",   color: ChatProvider.lmstudio.accentHex,
               category: .ai,        subtitle: String(localized: "Chat"),         source: .n8n),
         // ── Services ─────────────────────────────────────────────────────────
-        .init(id: "integration_resend",  name: "Resend",      color: "#22C55E",
-              category: .service,   subtitle: String(localized: "Integration"),  source: .n8n),
-        .init(id: "integration_n8n",     name: "n8n",         color: "#F29B38",
-              category: .service,   subtitle: String(localized: "Integration"),  source: .n8n),
-        .init(id: "integration_vercel",  name: "Vercel",      color: "#7C5CFF",
-              category: .service,   subtitle: String(localized: "Integration"),  source: .n8n),
-        .init(id: "integration_github",  name: "GitHub",      color: "#F4505E",
-              category: .service,   subtitle: String(localized: "Integration"),  source: .n8n),
-        .init(id: "integration_notion",  name: "Notion",      color: "#8C8C8C",
-              category: .service,   subtitle: String(localized: "Integration"),  source: .n8n),
-        .init(id: "integration_calcom",  name: "Cal.com",     color: "#C9956A",
-              category: .service,   subtitle: String(localized: "Integration"),  source: .n8n),
-        .init(id: "integration_stripe",  name: "Stripe",      color: "#0570DE",
-              category: .service,   subtitle: String(localized: "Integration"),  source: .n8n),
         .init(id: "integration_music",   name: "Apple Music", color: "#FA2D48",
               category: .service,   subtitle: String(localized: "Integration"),  source: .n8n, githubOnly: true),
         .init(id: "integration_spotify", name: "Spotify",     color: "#1DB954",
@@ -128,10 +114,6 @@ enum PillCatalog {
               category: .service,   subtitle: String(localized: "Integration"),  source: .n8n, githubOnly: true),
         .init(id: "integration_whatsapp", name: "WhatsApp",  color: "#25D366",
               category: .service,   subtitle: String(localized: "Integration"),  source: .n8n, githubOnly: true),
-        .init(id: "integration_crypto",    name: "Crypto",      color: "#F7931A",
-              category: .service,   subtitle: String(localized: "Integration"),  source: .n8n),
-        .init(id: "integration_portfolio", name: "Portfolio",   color: "#FFD700",
-              category: .service,   subtitle: String(localized: "Integration"),  source: .n8n),
     ]
 
     /// Pills available in the current build target.

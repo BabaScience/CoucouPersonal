@@ -200,7 +200,6 @@ struct OverviewView: View {
             #if !APPSTORE
             withAnimation(.easeIn(duration: 0.16)) { state.showingPlanDetail = false }
             #endif
-            if new == "integration_github" { GithubPoller.shared.refreshIfStale() }
         }
         #if !APPSTORE
         .onChange(of: state.view) { _, v in
@@ -211,9 +210,6 @@ struct OverviewView: View {
             #if !APPSTORE
             if m != .expanded { state.showingPlanDetail = false; activeDiffId = nil }
             #endif
-            if m == .expanded && state.focusId == "integration_github" {
-                GithubPoller.shared.refreshIfStale()
-            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .islandToggleDiff)) { _ in
             if let id = activeDiffId {
@@ -249,14 +245,6 @@ struct OverviewView: View {
                 NSWorkspace.shared.openApplication(at: url, configuration: .init(), completionHandler: nil)
             }
             #endif
-        case "integration_crypto":
-            let exchange = CryptoSettings.exchange
-            if let first = CryptoSettings.coins.first,
-               let url = exchange.tradeURL(exchange.pair(first, CryptoSettings.currency)) {
-                NSWorkspace.shared.open(url)
-            }
-        case "integration_portfolio":
-            break   // no global URL; individual holdings open their exchange pages
         case "integration_vercel":
             NSWorkspace.shared.open(URL(string: "https://vercel.com/dashboard")!)
         case "integration_github":
@@ -1976,10 +1964,6 @@ struct IntegrationCardView: View {
             #else
             return false
             #endif
-        case "integration_crypto":
-            return true  // public market data: no key, nothing to set up
-        case "integration_portfolio":
-            return PortfolioSettings.hasAnyAccount
         case "ai_anthropic":  return KeychainStore.shared.get("anthropic-api-key") != nil
         case "ai_google":     return KeychainStore.shared.get("google-api-key")    != nil
         case "ai_openai":     return KeychainStore.shared.get("openai-api-key")    != nil
@@ -2228,13 +2212,6 @@ struct IntegrationCardView: View {
             MusicCardView()
                 .transition(.opacity)
             #endif
-        } else if task.id == "integration_crypto" {
-            // Its own card in every state (loading, no coins, prices).
-            CryptoCardView()
-                .transition(.opacity)
-        } else if task.id == "integration_portfolio" {
-            PortfolioCardView()
-                .transition(.opacity)
         } else if task.id == "integration_whatsapp" {
             // Its own card in every state (not linked, no message, conversations).
             #if !APPSTORE
@@ -2415,18 +2392,6 @@ struct IntegrationCardView: View {
                         Button("Open \(task.name)") { NSWorkspace.shared.open(url) }
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(Color(hex: task.color).opacity(0.85))
-                            .buttonStyle(.plain)
-                    }
-                    if task.id == "integration_stripe" && isConfigured {
-                        Button("Refresh") { Task { @MainActor in StripePoller.shared.pollNow() } }
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(Color(hex: "#0570DE").opacity(0.85))
-                            .buttonStyle(.plain)
-                    }
-                    if task.id == "integration_calcom" && isConfigured {
-                        Button("Refresh") { Task { @MainActor in CalcomPoller.shared.pollNow() } }
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(Color(hex: "#C9956A").opacity(0.85))
                             .buttonStyle(.plain)
                     }
                     // Settings button: shown when not configured, except cursor/codex and music
@@ -3021,7 +2986,6 @@ struct GitHubDetailView: View {
             .padding(.top, 4)
             .clipped()
             .onAppear {
-                GithubPoller.shared.refreshIfStale()
                 appState.cardItemCount = totalItems
             }
             .onDisappear { appState.cardItemCount = 0 }
@@ -3148,7 +3112,6 @@ private struct GitHubActivityDetailContent: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(.top, 4)
         .clipped()
-        .onAppear { GithubPoller.shared.refreshActivityIfStale() }
         .onExitCommand { onBack() }
     }
 
