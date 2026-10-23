@@ -6,17 +6,18 @@ import UniformTypeIdentifiers
 
 /// `Coucou --screen-tool <command>`: the hands and eyes of the screen assistant.
 ///
-/// Claude (run by `ScreenAgent`) calls it through the `coucou-screen` wrapper with Bash. It runs as
-/// a child of Coucou, so it uses Coucou's Screen Recording and Accessibility permissions. The
-/// running app draws the pointer and the messages: the two talk with distributed notifications.
+/// Claude (run by `ScreenAgent`) calls it through the `coucou-screen` wrapper with Bash. That
+/// process is only a messenger: macOS credits its permission checks to Claude Code, not to Coucou,
+/// so it hands each command to the running Coucou app (`perform`, which has Screen Recording and
+/// Accessibility) and prints the answer. The two talk with distributed notifications.
 ///
-/// Coordinates are pixels of the last screenshot (origin top-left); the tool converts them to screen
-/// points with the scale it saved when taking it.
+/// Coordinates are pixels of the last screenshot (origin top-left); they are converted to screen
+/// points with the scale saved when it was taken.
 enum ScreenTool {
-    static let pointNote   = Notification.Name("fr.coucou.screen.point")
-    static let sayNote     = Notification.Name("fr.coucou.screen.say")
-    static let captureNote = Notification.Name("fr.coucou.screen.capture")
-    static let replyNote   = Notification.Name("fr.coucou.screen.reply")
+    static let pointNote    = Notification.Name("fr.coucou.screen.point")
+    static let replyNote    = Notification.Name("fr.coucou.screen.reply")
+    static let requestNote  = Notification.Name("fr.coucou.screen.request")
+    static let responseNote = Notification.Name("fr.coucou.screen.response")
 
     static let usage = """
     coucou-screen screenshot                      capture the main screen, prints the image path
@@ -30,275 +31,306 @@ enum ScreenTool {
     coucou-screen scroll X Y up|down [N]          (Do it mode only)
     """
 
+    private static let commands: Set<String> = ["screenshot", "zoom", "point", "say", "click", "move", "type", "key", "scroll"]
+
+    // MARK: Messenger (the process Claude runs)
+
     static func main(_ args: [String]) -> Never {
         let cmd = args.first ?? "help"
-        let rest = Array(args.dropFirst())
-        let actMode = ProcessInfo.processInfo.environment["COUCOU_SCREEN_MODE"] == "act"
-        let actions: Set<String> = ["click", "move", "type", "key", "scroll"]
-        if actions.contains(cmd) && !actMode {
-            fail("'\(cmd)' is not allowed in Guide mode: use `point` to show the user where to act.")
-        }
-        if actions.contains(cmd) && !AXIsProcessTrusted() {
-            fail("Coucou has no Accessibility permission, so it can't click or type. Ask the user to allow Coucou in System Settings → Privacy & Security → Accessibility.")
-        }
-        switch cmd {
-        case "screenshot": screenshot()
-        case "zoom":       zoom(rest)
-        case "point":      point(rest)
-        case "say":
-            post(sayNote, ["text": rest.joined(separator: " ")])
-            done("Shown.")
-        case "click":      click(rest)
-        case "move":
-            let p = xy(rest)
-            CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
-            done("Moved to \(Int(p.x)),\(Int(p.y)).")
-        case "type":       type(rest.joined(separator: " "))
-        case "key":        key(rest.first ?? "")
-        case "scroll":     scroll(rest)
-        default:
+        guard commands.contains(cmd) else {
             print(usage)
             exit(cmd == "help" ? 0 : 2)
         }
-        exit(0)
-    }
-
-    // MARK: Eyes
-
-    /// The longest side Claude sees in full detail: bigger images get shrunk by Claude Code
-    /// (an ultrawide came out 600 px wide), so screenshots are made at this size.
-    private static let maxSide: CGFloat = 1568
-
-    private static var shotsDir: URL {
-        URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("shots")
-    }
-    private static var scaleFile: URL { shotsDir.appendingPathComponent(".scale") }
-
-    /// Screen points per screenshot pixel, from the last screenshot (1 before any).
-    private static var pointsPerPixel: CGFloat {
-        guard let s = try? String(contentsOf: scaleFile, encoding: .utf8), let v = Double(s) else { return 1 }
-        return CGFloat(v)
-    }
-
-    /// Captures the main display (or `rect` of it, in points) at full resolution.
-    private static func capture(_ rect: CGRect? = nil) -> CGImage {
-        guard CGPreflightScreenCaptureAccess() else {
-            fail("Coucou has no Screen Recording permission. Ask the user to allow Coucou in System Settings → Privacy & Security → Screen Recording, then restart Coucou.")
-        }
-        try? FileManager.default.createDirectory(at: shotsDir, withIntermediateDirectories: true)
-        let raw = shotsDir.appendingPathComponent("raw-\(Int(Date().timeIntervalSince1970 * 1000)).png")
-        // The pointer and the HUD step aside while the picture is taken.
-        post(captureNote, ["state": "begin"])
-        Thread.sleep(forTimeInterval: 0.25)
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        var args = ["-x", "-C", "-m", "-t", "png"]
-        if let r = rect { args += ["-R", "\(Int(r.minX)),\(Int(r.minY)),\(Int(r.width)),\(Int(r.height))"] }
-        p.arguments = args + [raw.path]
-        try? p.run()
-        p.waitUntilExit()
-        post(captureNote, ["state": "end"])
-        defer { try? FileManager.default.removeItem(at: raw) }
-        guard let src = CGImageSourceCreateWithURL(raw as CFURL, nil),
-              let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { fail("The screenshot failed.") }
-        return img
-    }
-
-    /// Writes `img` as a JPEG of `size` pixels; returns its path.
-    private static func save(_ img: CGImage, size: CGSize, prefix: String) -> URL {
-        prune(shotsDir, keep: 12)
-        let out = shotsDir.appendingPathComponent("\(prefix)-\(Int(Date().timeIntervalSince1970 * 1000)).jpg")
-        guard let ctx = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8,
-                                  bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
-                                  bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { fail("The screenshot failed.") }
-        ctx.interpolationQuality = .high
-        ctx.draw(img, in: CGRect(origin: .zero, size: size))
-        guard let scaled = ctx.makeImage(),
-              let dest = CGImageDestinationCreateWithURL(out as CFURL, UTType.jpeg.identifier as CFString, 1, nil) else {
-            fail("The screenshot failed.")
-        }
-        CGImageDestinationAddImage(dest, scaled, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
-        CGImageDestinationFinalize(dest)
-        return out
-    }
-
-    private static func screenshot() {
-        let bounds = CGDisplayBounds(CGMainDisplayID())
-        let img = capture()
-        let k = min(1, maxSide / max(bounds.width, bounds.height))
-        let size = CGSize(width: (bounds.width * k).rounded(), height: (bounds.height * k).rounded())
-        let out = save(img, size: size, prefix: "screen")
-        // Every command takes coordinates in this image's pixels and converts them back.
-        try? String(Double(bounds.width / size.width)).write(to: scaleFile, atomically: true, encoding: .utf8)
-        let front = NSWorkspace.shared.frontmostApplication?.localizedName ?? "unknown"
-        let mouse = toPixels(CGEvent(source: nil)?.location ?? .zero)
-        done("""
-        \(out.path)
-        Size \(Int(size.width))x\(Int(size.height)) pixels. All coordinates you pass to coucou-screen are pixels of \
-        this image. Front app: \(front). Mouse at \(Int(mouse.x)),\(Int(mouse.y)). Read the file to see the screen; \
-        use `zoom` to read small text.
-        """)
-    }
-
-    /// A close-up of part of the last screenshot, to read small text.
-    private static func zoom(_ args: [String]) {
-        guard args.count >= 4, let x = Double(args[0]), let y = Double(args[1]),
-              let w = Double(args[2]), let h = Double(args[3]), w > 0, h > 0 else {
-            fail("Usage: zoom X Y W H (a region of the last screenshot, in its pixels).")
-        }
-        let k = pointsPerPixel
-        let region = CGRect(x: x * k, y: y * k, width: w * k, height: h * k)
-        let img = capture(region)
-        let fit = min(1, maxSide / max(CGFloat(img.width), CGFloat(img.height)))
-        let size = CGSize(width: (CGFloat(img.width) * fit).rounded(), height: (CGFloat(img.height) * fit).rounded())
-        let out = save(img, size: size, prefix: "zoom")
-        let f = w / Double(size.width)
-        done("""
-        \(out.path)
-        Close-up of \(Int(x)),\(Int(y)) \(Int(w))x\(Int(h)), shown at \(Int(size.width))x\(Int(size.height)). \
-        To act on something in it, convert back: screenshot x = \(Int(x)) + zx * \(String(format: "%.3f", f)), \
-        y = \(Int(y)) + zy * \(String(format: "%.3f", f)).
-        """)
-    }
-
-    private static func toPixels(_ p: CGPoint) -> CGPoint {
-        let k = pointsPerPixel
-        return CGPoint(x: p.x / k, y: p.y / k)
-    }
-
-    private static func prune(_ dir: URL, keep: Int) {
-        let files = ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
-            .filter { ["png", "jpg"].contains($0.pathExtension) }
-            .sorted { $0.lastPathComponent > $1.lastPathComponent }
-        for f in files.dropFirst(keep) { try? FileManager.default.removeItem(at: f) }
-    }
-
-    // MARK: Guiding
-
-    /// Shows the pointer and waits for the user: a click, Next, or Stop (3 minutes at most).
-    private static func point(_ args: [String]) {
-        let p = xy(args)
-        let text = args.dropFirst(2).joined(separator: " ")
-        let center = DistributedNotificationCenter.default()
-        final class Box: @unchecked Sendable { var reply: [AnyHashable: Any]? }
+        let id = UUID().uuidString
+        let cwd = FileManager.default.currentDirectoryPath
+        final class Box: @unchecked Sendable { var response: [AnyHashable: Any]?; var reply: [AnyHashable: Any]? }
         let box = Box()
-        let token = center.addObserver(forName: replyNote, object: nil, queue: nil) { note in
-            box.reply = note.userInfo ?? [:]
+        let center = DistributedNotificationCenter.default()
+        let t1 = center.addObserver(forName: responseNote, object: nil, queue: nil) { note in
+            if note.userInfo?["id"] as? String == id { box.response = note.userInfo }
         }
-        post(pointNote, ["x": Double(p.x), "y": Double(p.y), "text": text])
-        let deadline = Date().addingTimeInterval(180)
-        while box.reply == nil && Date() < deadline {
-            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.2))
+        // `point` is answered by the user (a click, Next or Stop), not by the app.
+        let t2 = center.addObserver(forName: replyNote, object: nil, queue: nil) { note in
+            if cmd == "point" { box.reply = note.userInfo ?? [:] }
         }
-        center.removeObserver(token)
-        guard let reply = box.reply else {
-            done("The user didn't act within 3 minutes. Take a screenshot to see where they are.")
+        center.postNotificationName(requestNote, object: nil,
+                                    userInfo: ["id": id, "args": args, "cwd": cwd], deliverImmediately: true)
+        let deadline = Date().addingTimeInterval(cmd == "point" ? 180 : 30)
+        while box.response == nil && box.reply == nil && Date() < deadline {
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.1))
         }
-        switch reply["how"] as? String {
-        case "stop":
-            print("The user stopped the session. Stop now and don't take any further action.")
-            exit(1)
-        case "click":
-            let at = toPixels(CGPoint(x: reply["x"] as? Double ?? 0, y: reply["y"] as? Double ?? 0))
-            done("The user clicked at \(Int(at.x)),\(Int(at.y)). Take a new screenshot to check the result before the next step.")
-        default:
-            done("The user pressed Next. Take a new screenshot to check the result before the next step.")
+        center.removeObserver(t1)
+        center.removeObserver(t2)
+        if let r = box.response {
+            print(r["output"] as? String ?? "")
+            exit(Int32(r["code"] as? Int ?? 1))
         }
-    }
-
-    // MARK: Hands
-
-    private static func click(_ args: [String]) {
-        let p = xy(args)
-        let right = args.contains("--right")
-        let count = args.contains("--double") ? 2 : 1
-        let (down, up, button): (CGEventType, CGEventType, CGMouseButton) = right
-            ? (.rightMouseDown, .rightMouseUp, .right) : (.leftMouseDown, .leftMouseUp, .left)
-        CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: button)?.post(tap: .cghidEventTap)
-        usleep(60_000)
-        for i in 1...count {
-            for type in [down, up] {
-                let e = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: p, mouseButton: button)
-                e?.setIntegerValueField(.mouseEventClickState, value: Int64(i))
-                e?.post(tap: .cghidEventTap)
-                usleep(30_000)
+        if let reply = box.reply {
+            switch reply["how"] as? String {
+            case "stop":
+                print("The user stopped the session. Stop now and don't take any further action.")
+                exit(1)
+            case "click":
+                let k = Session(cwd: URL(fileURLWithPath: cwd), act: false).pointsPerPixel
+                let x = Int((reply["x"] as? Double ?? 0) / k), y = Int((reply["y"] as? Double ?? 0) / k)
+                print("The user clicked at \(x),\(y). Take a new screenshot to check the result before the next step.")
+            default:
+                print("The user pressed Next. Take a new screenshot to check the result before the next step.")
             }
+            exit(0)
         }
-        done("Clicked at \(Int(p.x)),\(Int(p.y)). Take a screenshot to check the result.")
-    }
-
-    private static func type(_ text: String) {
-        let units = Array(text.utf16)
-        var i = 0
-        while i < units.count {
-            let chunk = Array(units[i..<min(i + 16, units.count)])
-            for down in [true, false] {
-                let e = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down)
-                e?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk)
-                e?.post(tap: .cghidEventTap)
-            }
-            usleep(15_000)
-            i += 16
-        }
-        done("Typed \(text.count) characters.")
-    }
-
-    private static func key(_ combo: String) {
-        let parts = combo.lowercased().split(separator: "+").map(String.init)
-        var flags: CGEventFlags = []
-        var code: CGKeyCode?
-        for part in parts {
-            switch part {
-            case "cmd", "command":       flags.insert(.maskCommand)
-            case "shift":                flags.insert(.maskShift)
-            case "opt", "option", "alt": flags.insert(.maskAlternate)
-            case "ctrl", "control":      flags.insert(.maskControl)
-            default:                     code = keyCodes[part]
-            }
-        }
-        guard let code else { fail("Unknown key in '\(combo)'. Use names like return, tab, escape, space, delete, up, a, 1, f5.") }
-        for down in [true, false] {
-            let e = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)
-            e?.flags = flags
-            e?.post(tap: .cghidEventTap)
-            usleep(20_000)
-        }
-        done("Pressed \(combo).")
-    }
-
-    private static func scroll(_ args: [String]) {
-        let p = xy(args)
-        let up = args.count > 2 && args[2].lowercased() == "up"
-        let n = Int32(args.count > 3 ? Int(args[3]) ?? 5 : 5)
-        CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
-        usleep(50_000)
-        CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: up ? n : -n, wheel2: 0, wheel3: 0)?
-            .post(tap: .cghidEventTap)
-        done("Scrolled \(up ? "up" : "down") \(n) lines at \(Int(p.x)),\(Int(p.y)).")
-    }
-
-    // MARK: Helpers
-
-    private static func xy(_ args: [String]) -> CGPoint {
-        guard args.count >= 2, let x = Double(args[0]), let y = Double(args[1]) else {
-            fail("Expected X Y coordinates (pixels of the last screenshot).")
-        }
-        let k = pointsPerPixel
-        return CGPoint(x: x * k, y: y * k)
-    }
-
-    private static func post(_ name: Notification.Name, _ info: [String: Any]) {
-        DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: info, deliverImmediately: true)
-    }
-
-    private static func done(_ message: String) -> Never {
-        print(message)
-        exit(0)
-    }
-
-    private static func fail(_ message: String) -> Never {
-        print("Error: \(message)")
+        print(cmd == "point"
+              ? "The user didn't act within 3 minutes. Take a screenshot to see where they are."
+              : "Error: Coucou didn't answer. Ask the user to open Coucou Personal and start again from it.")
         exit(1)
+    }
+
+    // MARK: Worker (inside the Coucou app)
+
+    /// Runs a command in the app. nil for `point`: the user's answer goes straight to the messenger.
+    /// Called off the main thread.
+    static func perform(_ args: [String], cwd: URL, act: Bool) -> (output: String, code: Int)? {
+        let cmd = args.first ?? ""
+        let rest = Array(args.dropFirst())
+        let session = Session(cwd: cwd, act: act)
+        do {
+            let actions: Set<String> = ["click", "move", "type", "key", "scroll"]
+            if actions.contains(cmd) && !act {
+                try fail("'\(cmd)' is not allowed in Guide mode: use `point` to show the user where to act.")
+            }
+            if actions.contains(cmd) && !AXIsProcessTrusted() {
+                try fail("Coucou has no Accessibility permission, so it can't click or type. Ask the user to allow Coucou Personal in System Settings → Privacy & Security → Accessibility.")
+            }
+            switch cmd {
+            case "screenshot": try session.screenshot()
+            case "zoom":       try session.zoom(rest)
+            case "point":
+                let p = try session.xy(rest)
+                let text = rest.dropFirst(2).joined(separator: " ")
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated { ScreenAgent.shared.showPointer(p, text) }
+                }
+                return nil
+            case "say":
+                let text = rest.joined(separator: " ")
+                DispatchQueue.main.async { MainActor.assumeIsolated { ScreenAgent.shared.say(text) } }
+                try done("Shown.")
+            case "click":      try session.click(rest)
+            case "move":
+                let p = try session.xy(rest)
+                CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
+                try done("Moved.")
+            case "type":       try session.type(rest.joined(separator: " "))
+            case "key":        try session.key(rest.first ?? "")
+            case "scroll":     try session.scroll(rest)
+            default:           try fail("Unknown command.\n\(usage)")
+            }
+            return ("", 0)
+        } catch let e as Exit {
+            return (e.message, e.code)
+        } catch {
+            return ("Error: \(error.localizedDescription)", 1)
+        }
+    }
+
+    /// How a command ends: its message, and 0 for success.
+    private struct Exit: Error { let message: String; let code: Int }
+    private static func done(_ message: String) throws -> Never { throw Exit(message: message, code: 0) }
+    private static func fail(_ message: String) throws -> Never { throw Exit(message: "Error: \(message)", code: 1) }
+
+    /// One command's context: the session folder (screenshots and their scale) and the mode.
+    private struct Session {
+        let cwd: URL
+        let act: Bool
+
+        // MARK: Eyes
+
+        /// The longest side Claude sees in full detail: bigger images get shrunk by Claude Code
+        /// (an ultrawide came out 600 px wide), so screenshots are made at this size.
+        static let maxSide: CGFloat = 1568
+
+        var shotsDir: URL { cwd.appendingPathComponent("shots") }
+        var scaleFile: URL { shotsDir.appendingPathComponent(".scale") }
+
+        /// Screen points per screenshot pixel, from the last screenshot (1 before any).
+        var pointsPerPixel: CGFloat {
+            guard let s = try? String(contentsOf: scaleFile, encoding: .utf8), let v = Double(s) else { return 1 }
+            return CGFloat(v)
+        }
+
+        /// Captures the main display (or `rect` of it, in points) at full resolution.
+        func capture(_ rect: CGRect? = nil) throws -> CGImage {
+            guard CGPreflightScreenCaptureAccess() else {
+                try ScreenTool.fail("Coucou has no Screen Recording permission. Ask the user to allow Coucou in System Settings → Privacy & Security → Screen Recording, then restart Coucou.")
+            }
+            try? FileManager.default.createDirectory(at: shotsDir, withIntermediateDirectories: true)
+            let raw = shotsDir.appendingPathComponent("raw-\(Int(Date().timeIntervalSince1970 * 1000)).png")
+            // The pointer and the HUD step aside while the picture is taken.
+            DispatchQueue.main.sync { MainActor.assumeIsolated { ScreenAgent.shared.setCapturing(true) } }
+            Thread.sleep(forTimeInterval: 0.25)
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            var args = ["-x", "-C", "-m", "-t", "png"]
+            if let r = rect { args += ["-R", "\(Int(r.minX)),\(Int(r.minY)),\(Int(r.width)),\(Int(r.height))"] }
+            p.arguments = args + [raw.path]
+            try? p.run()
+            p.waitUntilExit()
+            DispatchQueue.main.sync { MainActor.assumeIsolated { ScreenAgent.shared.setCapturing(false) } }
+            defer { try? FileManager.default.removeItem(at: raw) }
+            guard let src = CGImageSourceCreateWithURL(raw as CFURL, nil),
+                  let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { try ScreenTool.fail("The screenshot failed.") }
+            return img
+        }
+
+        /// Writes `img` as a JPEG of `size` pixels; returns its path.
+        func save(_ img: CGImage, size: CGSize, prefix: String) throws -> URL {
+            prune(shotsDir, keep: 12)
+            let out = shotsDir.appendingPathComponent("\(prefix)-\(Int(Date().timeIntervalSince1970 * 1000)).jpg")
+            guard let ctx = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { try ScreenTool.fail("The screenshot failed.") }
+            ctx.interpolationQuality = .high
+            ctx.draw(img, in: CGRect(origin: .zero, size: size))
+            guard let scaled = ctx.makeImage(),
+                  let dest = CGImageDestinationCreateWithURL(out as CFURL, UTType.jpeg.identifier as CFString, 1, nil) else {
+                try ScreenTool.fail("The screenshot failed.")
+            }
+            CGImageDestinationAddImage(dest, scaled, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
+            CGImageDestinationFinalize(dest)
+            return out
+        }
+
+        func screenshot() throws {
+            let bounds = CGDisplayBounds(CGMainDisplayID())
+            let img = try capture()
+            let k = min(1, Self.maxSide / max(bounds.width, bounds.height))
+            let size = CGSize(width: (bounds.width * k).rounded(), height: (bounds.height * k).rounded())
+            let out = try save(img, size: size, prefix: "screen")
+            // Every command takes coordinates in this image's pixels and converts them back.
+            try? String(Double(bounds.width / size.width)).write(to: scaleFile, atomically: true, encoding: .utf8)
+            let front = NSWorkspace.shared.frontmostApplication?.localizedName ?? "unknown"
+            let mouse = toPixels(CGEvent(source: nil)?.location ?? .zero)
+            try ScreenTool.done("""
+            \(out.path)
+            Size \(Int(size.width))x\(Int(size.height)) pixels. All coordinates you pass to coucou-screen are pixels of \
+            this image. Front app: \(front). Mouse at \(Int(mouse.x)),\(Int(mouse.y)). Read the file to see the screen; \
+            use `zoom` to read small text.
+            """)
+        }
+
+        /// A close-up of part of the last screenshot, to read small text.
+        func zoom(_ args: [String]) throws {
+            guard args.count >= 4, let x = Double(args[0]), let y = Double(args[1]),
+                  let w = Double(args[2]), let h = Double(args[3]), w > 0, h > 0 else {
+                try ScreenTool.fail("Usage: zoom X Y W H (a region of the last screenshot, in its pixels).")
+            }
+            let k = pointsPerPixel
+            let region = CGRect(x: x * k, y: y * k, width: w * k, height: h * k)
+            let img = try capture(region)
+            let fit = min(1, Self.maxSide / max(CGFloat(img.width), CGFloat(img.height)))
+            let size = CGSize(width: (CGFloat(img.width) * fit).rounded(), height: (CGFloat(img.height) * fit).rounded())
+            let out = try save(img, size: size, prefix: "zoom")
+            let f = w / Double(size.width)
+            try ScreenTool.done("""
+            \(out.path)
+            Close-up of \(Int(x)),\(Int(y)) \(Int(w))x\(Int(h)), shown at \(Int(size.width))x\(Int(size.height)). \
+            To act on something in it, convert back: screenshot x = \(Int(x)) + zx * \(String(format: "%.3f", f)), \
+            y = \(Int(y)) + zy * \(String(format: "%.3f", f)).
+            """)
+        }
+
+        func toPixels(_ p: CGPoint) -> CGPoint {
+            let k = pointsPerPixel
+            return CGPoint(x: p.x / k, y: p.y / k)
+        }
+
+        func prune(_ dir: URL, keep: Int) {
+            let files = ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
+                .filter { ["png", "jpg"].contains($0.pathExtension) }
+                .sorted { $0.lastPathComponent > $1.lastPathComponent }
+            for f in files.dropFirst(keep) { try? FileManager.default.removeItem(at: f) }
+        }
+
+        // MARK: Hands
+
+        func click(_ args: [String]) throws {
+            let p = try xy(args)
+            let right = args.contains("--right")
+            let count = args.contains("--double") ? 2 : 1
+            let (down, up, button): (CGEventType, CGEventType, CGMouseButton) = right
+                ? (.rightMouseDown, .rightMouseUp, .right) : (.leftMouseDown, .leftMouseUp, .left)
+            CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: button)?.post(tap: .cghidEventTap)
+            usleep(60_000)
+            for i in 1...count {
+                for type in [down, up] {
+                    let e = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: p, mouseButton: button)
+                    e?.setIntegerValueField(.mouseEventClickState, value: Int64(i))
+                    e?.post(tap: .cghidEventTap)
+                    usleep(30_000)
+                }
+            }
+            try ScreenTool.done("Clicked at \(Int(p.x)),\(Int(p.y)). Take a screenshot to check the result.")
+        }
+
+        func type(_ text: String) throws {
+            let units = Array(text.utf16)
+            var i = 0
+            while i < units.count {
+                let chunk = Array(units[i..<min(i + 16, units.count)])
+                for down in [true, false] {
+                    let e = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down)
+                    e?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk)
+                    e?.post(tap: .cghidEventTap)
+                }
+                usleep(15_000)
+                i += 16
+            }
+            try ScreenTool.done("Typed \(text.count) characters.")
+        }
+
+        func key(_ combo: String) throws {
+            let parts = combo.lowercased().split(separator: "+").map(String.init)
+            var flags: CGEventFlags = []
+            var code: CGKeyCode?
+            for part in parts {
+                switch part {
+                case "cmd", "command":       flags.insert(.maskCommand)
+                case "shift":                flags.insert(.maskShift)
+                case "opt", "option", "alt": flags.insert(.maskAlternate)
+                case "ctrl", "control":      flags.insert(.maskControl)
+                default:                     code = ScreenTool.keyCodes[part]
+                }
+            }
+            guard let code else { try ScreenTool.fail("Unknown key in '\(combo)'. Use names like return, tab, escape, space, delete, up, a, 1, f5.") }
+            for down in [true, false] {
+                let e = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)
+                e?.flags = flags
+                e?.post(tap: .cghidEventTap)
+                usleep(20_000)
+            }
+            try ScreenTool.done("Pressed \(combo).")
+        }
+
+        func scroll(_ args: [String]) throws {
+            let p = try xy(args)
+            let up = args.count > 2 && args[2].lowercased() == "up"
+            let n = Int32(args.count > 3 ? Int(args[3]) ?? 5 : 5)
+            CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
+            usleep(50_000)
+            CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: up ? n : -n, wheel2: 0, wheel3: 0)?
+                .post(tap: .cghidEventTap)
+            try ScreenTool.done("Scrolled \(up ? "up" : "down") \(n) lines at \(Int(p.x)),\(Int(p.y)).")
+        }
+
+        // MARK: Helpers
+
+        func xy(_ args: [String]) throws -> CGPoint {
+            guard args.count >= 2, let x = Double(args[0]), let y = Double(args[1]) else {
+                try ScreenTool.fail("Expected X Y coordinates (pixels of the last screenshot).")
+            }
+            let k = pointsPerPixel
+            return CGPoint(x: x * k, y: y * k)
+        }
     }
 
     private static let keyCodes: [String: CGKeyCode] = {

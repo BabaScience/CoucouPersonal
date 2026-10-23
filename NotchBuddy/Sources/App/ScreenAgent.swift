@@ -24,6 +24,8 @@ final class ScreenAgent: ObservableObject {
     @Published private(set) var capturing = false
 
     private var run: ClaudeCLI.Run?
+    /// The mode the running session was started in (changing the picker mid-run changes nothing).
+    private var runMode: Mode = .guide
     private var sessionId: String?
     private var clickMonitor: Any?
     private var hud: NSPanel?
@@ -36,22 +38,39 @@ final class ScreenAgent: ObservableObject {
     private var toolPath: String { workspace.appendingPathComponent("bin/coucou-screen").path }
 
     private init() {
-        let center = DistributedNotificationCenter.default()
-        center.addObserver(forName: ScreenTool.pointNote, object: nil, queue: .main) { note in
+        // The `coucou-screen` messenger hands every command to this app, which has the permissions.
+        DistributedNotificationCenter.default().addObserver(forName: ScreenTool.requestNote, object: nil,
+                                                            queue: .main) { note in
             let info = note.userInfo ?? [:]
-            let x = info["x"] as? Double ?? 0, y = info["y"] as? Double ?? 0
-            let text = info["text"] as? String ?? ""
-            MainActor.assumeIsolated { ScreenAgent.shared.showPointer(CGPoint(x: x, y: y), text) }
-        }
-        center.addObserver(forName: ScreenTool.sayNote, object: nil, queue: .main) { note in
-            let text = note.userInfo?["text"] as? String ?? ""
-            MainActor.assumeIsolated { ScreenAgent.shared.status = text }
-        }
-        center.addObserver(forName: ScreenTool.captureNote, object: nil, queue: .main) { note in
-            let begin = note.userInfo?["state"] as? String == "begin"
-            MainActor.assumeIsolated { ScreenAgent.shared.setCapturing(begin) }
+            guard let id = info["id"] as? String, let args = info["args"] as? [String],
+                  let cwd = info["cwd"] as? String else { return }
+            MainActor.assumeIsolated { ScreenAgent.shared.handleRequest(id: id, args: args, cwd: cwd) }
         }
     }
+
+    /// Only the running session's own folder is served: nothing else can drive the screen.
+    private func handleRequest(id: String, args: [String], cwd: String) {
+        appendAppLog("nb.log", "[Screen] request \(args.first ?? "?") running=\(running)")
+        let ours = URL(fileURLWithPath: cwd).standardizedFileURL.path == workspace.standardizedFileURL.path
+        guard ours, running else {
+            respond(id, "Error: no screen assistant session is running in Coucou.", 1)
+            return
+        }
+        let act = runMode == .act
+        let folder = workspace
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let result = ScreenTool.perform(args, cwd: folder, act: act) else { return }
+            DispatchQueue.main.async { MainActor.assumeIsolated { ScreenAgent.shared.respond(id, result.output, result.code) } }
+        }
+    }
+
+    private func respond(_ id: String, _ output: String, _ code: Int) {
+        DistributedNotificationCenter.default().postNotificationName(
+            ScreenTool.responseNote, object: nil,
+            userInfo: ["id": id, "output": output, "code": code], deliverImmediately: true)
+    }
+
+    func say(_ text: String) { status = text }
 
     // MARK: Permissions
 
@@ -80,6 +99,7 @@ final class ScreenAgent: ObservableObject {
         log.append(StudioMessage(role: .user, text: q))
         status = "Looking at your screen…"
         running = true
+        runMode = mode
         let model = UserDefaults.standard.string(forKey: ClaudeCLI.screenModelKey) ?? "sonnet"
         var tools = ["Bash(\(toolPath):*)", "Read"]
         if mode == .act { tools.append("Bash(open:*)") }
@@ -89,8 +109,7 @@ final class ScreenAgent: ObservableObject {
             sessionId: sessionId,
             systemPrompt: systemPrompt(),
             allowedTools: tools,
-            model: model,
-            extraEnv: ["COUCOU_SCREEN_MODE": mode == .act ? "act" : "guide"]
+            model: model
         ) { [weak self] event in
             self?.handle(event)
         }
@@ -168,7 +187,7 @@ final class ScreenAgent: ObservableObject {
 
     // MARK: Pointer
 
-    private func showPointer(_ p: CGPoint, _ text: String) {
+    func showPointer(_ p: CGPoint, _ text: String) {
         pointer = (p, text)
         if !text.isEmpty { status = text }
         showOverlay()
@@ -189,7 +208,7 @@ final class ScreenAgent: ObservableObject {
         if let m = clickMonitor { NSEvent.removeMonitor(m); clickMonitor = nil }
     }
 
-    private func setCapturing(_ on: Bool) {
+    func setCapturing(_ on: Bool) {
         capturing = on
         hud?.alphaValue = on ? 0 : 1
         overlay?.alphaValue = on ? 0 : 1

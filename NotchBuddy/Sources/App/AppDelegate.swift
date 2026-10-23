@@ -31,6 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if !APPSTORE
         // Before anything writes its settings: did Coucou just update itself? (What's new, once.)
         WhatsNewCenter.shared.noteLaunch()
+        // The screen assistant listens for its tool's requests from launch.
+        _ = ScreenAgent.shared
         #endif
         // Warm up Keychain cache on main thread BEFORE any poller or view touches it
         _ = KeychainStore.shared
