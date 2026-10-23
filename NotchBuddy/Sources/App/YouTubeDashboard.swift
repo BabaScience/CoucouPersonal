@@ -69,6 +69,12 @@ struct HubYouTubePage: View {
                 }
                 .pickerStyle(.segmented).labelsHidden().frame(width: 140)
             }
+            if auth.signedIn {
+                HubIconButton(symbol: "person.crop.circle.badge.questionmark", help: "Switch channel") {
+                    auth.signOut()
+                    auth.signIn()
+                }
+            }
             if studio.loadingAPI || studio.refreshing {
                 ProgressView().controlSize(.small).frame(width: 28)
             } else {
@@ -95,6 +101,15 @@ private struct YouTubeOverview: View {
                 if !auth.signedIn {
                     YouTubeConnectCard()
                     publicUploads
+                } else if let other = studio.wrongChannel {
+                    glass {
+                        Label("Google connected “\(other)”, not \(studio.channelTitle).", systemImage: "exclamationmark.triangle")
+                            .font(.system(size: 13, weight: .semibold)).foregroundColor(StudioPalette.color(1))
+                        Text("Your account manages several channels. Switch channel, and on Google's page choose \(studio.channelTitle).")
+                            .font(.system(size: 12)).foregroundColor(HubTheme.secondary)
+                        Button("Switch channel") { auth.signOut(); auth.signIn() }
+                            .buttonStyle(HubButtonStyle(primary: true))
+                    }
                 } else if let error = studio.apiError {
                     glass { Label(error, systemImage: "exclamationmark.triangle").foregroundColor(HubTheme.red).font(.system(size: 12.5)) }
                 }

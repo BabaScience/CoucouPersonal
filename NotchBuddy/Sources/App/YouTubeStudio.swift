@@ -43,6 +43,8 @@ final class YouTubeStudio: ObservableObject {
     @Published private(set) var analytics: YTAnalytics?
     @Published private(set) var loadingAPI = false
     @Published private(set) var apiError: String?
+    /// The channel Google signed in to when it isn't this studio's (a Brand Account picked by mistake).
+    @Published private(set) var wrongChannel: String?
     @Published var periodDays = 28 {
         didSet { if oldValue != periodDays { Task { await refreshAPI() } } }
     }
@@ -106,6 +108,15 @@ final class YouTubeStudio: ObservableObject {
         defer { loadingAPI = false }
         do {
             let channel = try await YouTubeAPI.channel()
+            // The account may manage several channels: only this studio's channel is used.
+            if let expected = UserDefaults.standard.string(forKey: channelIdKey), channel.id != expected {
+                apiChannel = nil
+                videoStats = []
+                analytics = nil
+                wrongChannel = channel.title
+                return
+            }
+            wrongChannel = nil
             apiChannel = channel
             channelTitle = channel.title
             subscribers = channel.subscribers.formatted(.number.notation(.compactName))
