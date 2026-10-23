@@ -124,7 +124,7 @@ extension HubPage {
         case .pills:        return String(localized: "hub.notch.pills")
         case .agents:       return String(localized: "hub.notch.agents")
         case .chat:         return String(localized: "hub.notch.chat")
-        case .integrations: return String(localized: "hub.notch.integrations")
+        case .integrations: return "WhatsApp, through a gateway on this Mac."
         case .voice:        return String(localized: "hub.notch.voice")
         case .shortcuts:    return String(localized: "hub.notch.shortcuts")
         default:            return nil
