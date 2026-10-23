@@ -21,7 +21,8 @@ final class YouTubeAuth: ObservableObject {
     static let scopes = [
         "https://www.googleapis.com/auth/youtube.readonly",
         "https://www.googleapis.com/auth/yt-analytics.readonly",
-        "https://www.googleapis.com/auth/yt-analytics-monetary.readonly",
+        // No yt-analytics-monetary.readonly: Google's channel picker answered "400 malformed"
+        // with it for a channel outside the Partner Program. Revenue is simply not shown.
     ]
 
     @Published private(set) var signedIn = KeychainStore.shared.get(YouTubeAuth.refreshTokenKey) != nil
