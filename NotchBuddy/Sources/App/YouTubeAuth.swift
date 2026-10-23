@@ -122,12 +122,25 @@ final class YouTubeAuth: ObservableObject {
             .init(name: "state", value: state),
         ]
         consentURL = c.url
-        NSWorkspace.shared.open(c.url!)
+        openPrivately(c.url!)
         // Give up after 5 minutes so the port doesn't stay open.
         DispatchQueue.main.asyncAfter(deadline: .now() + 300) { [weak self] in
             guard let self, self.signingIn else { return }
             self.fail("The sign-in timed out. Try again.")
         }
+    }
+
+    /// In a Chrome incognito window when Chrome is installed: no other Google accounts and no
+    /// extensions there, which broke Google's channel picker ("400 malformed") in a busy profile.
+    private func openPrivately(_ url: URL) {
+        guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.google.Chrome") != nil else {
+            NSWorkspace.shared.open(url)
+            return
+        }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        p.arguments = ["-na", "Google Chrome", "--args", "--incognito", url.absoluteString]
+        do { try p.run() } catch { NSWorkspace.shared.open(url) }
     }
 
     private func handle(_ conn: NWConnection, verifier: String, state: String) {

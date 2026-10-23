@@ -438,7 +438,7 @@ struct YouTubeConnectCard: View {
                 }
                 if auth.signingIn {
                     HStack(spacing: 8) {
-                        Text("Finish in your browser. If Google shows an error, copy the link and open it in a private window (⌘⇧N in Chrome), signed in only with the channel's account.")
+                        Text("Finish in the private Chrome window that opened: sign in with the channel's account and allow access.")
                             .font(.system(size: 11)).foregroundColor(HubTheme.muted)
                             .fixedSize(horizontal: false, vertical: true)
                         if let url = auth.consentURL {
