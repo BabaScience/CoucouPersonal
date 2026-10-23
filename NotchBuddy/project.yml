@@ -39,6 +39,9 @@ settings:
     Debug:
       CODE_SIGNING_REQUIRED: NO
       CODE_SIGNING_ALLOWED: NO
+      # Personal build on Xcode 16.1: its Swift 6.0 compiler flags data-race cases that newer
+      # compilers accept, so the Debug build uses Swift 5 mode (they stay warnings).
+      SWIFT_VERSION: "5.0"
     DebugCloud:
       CODE_SIGNING_REQUIRED: YES
       CODE_SIGNING_ALLOWED: YES

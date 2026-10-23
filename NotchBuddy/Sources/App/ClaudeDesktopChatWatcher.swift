@@ -14,7 +14,7 @@ import SwiftUI
 @MainActor
 final class ClaudeDesktopChatWatcher {
     static let shared = ClaudeDesktopChatWatcher()
-    static let bundleId = "com.anthropic.claudefordesktop"
+    nonisolated static let bundleId = "com.anthropic.claudefordesktop"
     static let pillId = "agent_claude-desktop"
 
     static var enabled: Bool {

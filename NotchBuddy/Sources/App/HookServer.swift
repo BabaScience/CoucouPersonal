@@ -2732,8 +2732,7 @@ export default function (amp: any): void {
         do { try task.run() } catch { return false }
         // Wait up to 3 seconds
         let group = DispatchGroup(); group.enter()
-        var exited = false
-        DispatchQueue.global(qos: .background).async { task.waitUntilExit(); exited = true; group.leave() }
+        DispatchQueue.global(qos: .background).async { task.waitUntilExit(); group.leave() }
         if group.wait(timeout: .now() + 3) == .timedOut { task.terminate(); return false }
         return task.terminationStatus == 0
     }
