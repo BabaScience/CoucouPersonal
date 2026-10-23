@@ -27,6 +27,8 @@ final class YouTubeAuth: ObservableObject {
     @Published private(set) var signedIn = KeychainStore.shared.get(YouTubeAuth.refreshTokenKey) != nil
     @Published private(set) var signingIn = false
     @Published var error: String?
+    /// Google's consent page for the sign-in in progress, to open it elsewhere (a private window).
+    @Published private(set) var consentURL: URL?
 
     private var accessToken: String?
     private var accessExpiry = Date.distantPast
@@ -118,6 +120,7 @@ final class YouTubeAuth: ObservableObject {
             .init(name: "prompt", value: "consent"),
             .init(name: "state", value: state),
         ]
+        consentURL = c.url
         NSWorkspace.shared.open(c.url!)
         // Give up after 5 minutes so the port doesn't stay open.
         DispatchQueue.main.asyncAfter(deadline: .now() + 300) { [weak self] in
@@ -181,6 +184,7 @@ final class YouTubeAuth: ObservableObject {
 
     private func finish() {
         signingIn = false
+        consentURL = nil
         listener?.cancel()
         listener = nil
     }

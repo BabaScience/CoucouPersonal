@@ -437,9 +437,15 @@ struct YouTubeConnectCard: View {
                         .buttonStyle(HubButtonStyle())
                 }
                 if auth.signingIn {
-                    Text("Finish in your browser. If Google shows an error page, press Cancel, then Change client and paste the values again.")
-                        .font(.system(size: 11)).foregroundColor(HubTheme.muted)
-                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 8) {
+                        Text("Finish in your browser. If Google shows an error, copy the link and open it in a private window (⌘⇧N in Chrome), signed in only with the channel's account.")
+                            .font(.system(size: 11)).foregroundColor(HubTheme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let url = auth.consentURL {
+                            Button("Copy sign-in link") { NSPasteboard.copyText(url.absoluteString) }
+                                .buttonStyle(HubButtonStyle())
+                        }
+                    }
                 }
             } else {
                 Text("One-time setup in Google Cloud (free): create a project, enable “YouTube Data API v3” and “YouTube Analytics API”, set up the OAuth consent screen (External, add yourself as a test user), then create an OAuth client ID of type “Desktop app” and paste it here.")
