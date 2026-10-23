@@ -37,6 +37,16 @@ final class YouTubeStudio: ObservableObject {
     @Published private(set) var refreshing = false
     @Published private(set) var refreshError: String?
 
+    // From the YouTube APIs once signed in (YouTubeAuth).
+    @Published private(set) var apiChannel: YTChannel?
+    @Published private(set) var videoStats: [YTVideoStat] = []
+    @Published private(set) var analytics: YTAnalytics?
+    @Published private(set) var loadingAPI = false
+    @Published private(set) var apiError: String?
+    @Published var periodDays = 28 {
+        didSet { if oldValue != periodDays { Task { await refreshAPI() } } }
+    }
+
     @Published private(set) var messages: [StudioMessage] = []
     @Published private(set) var running = false
     private var sessionId: String?
@@ -86,6 +96,66 @@ final class YouTubeStudio: ObservableObject {
         } catch {
             refreshError = error.localizedDescription
         }
+    }
+
+    /// Everything from the APIs: channel, the latest 100 uploads, analytics for `periodDays`.
+    func refreshAPI() async {
+        guard YouTubeAuth.shared.signedIn, !loadingAPI else { return }
+        loadingAPI = true
+        apiError = nil
+        defer { loadingAPI = false }
+        do {
+            let channel = try await YouTubeAPI.channel()
+            apiChannel = channel
+            channelTitle = channel.title
+            subscribers = channel.subscribers.formatted(.number.notation(.compactName))
+            async let vids = YouTubeAPI.videos(playlist: channel.uploadsPlaylist)
+            async let stats = YouTubeAPI.analytics(days: periodDays)
+            videoStats = try await vids
+            analytics = try await stats
+            ensureWorkspace()
+            writeAnalyticsFile()
+        } catch {
+            apiError = error.localizedDescription
+        }
+    }
+
+    /// The API numbers as Markdown, for Claude (`analytics.md` in the studio folder).
+    private func writeAnalyticsFile() {
+        guard let c = apiChannel else { return }
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        var l = ["# \(c.title) — YouTube Analytics", "",
+                 "Fetched by Coucou on \(df.string(from: Date())) from the YouTube Data and Analytics APIs.", "",
+                 "- Subscribers: \(c.subscribers)", "- Lifetime views: \(c.views)", "- Videos: \(c.videos)"]
+        if let a = analytics {
+            l += ["", "## Last \(a.days) days", "",
+                  "- Views: \(a.views)", "- Watch time: \(a.minutes / 60) hours",
+                  "- Net subscribers: \(a.netSubscribers)",
+                  "- Average view duration: \(Int(a.averageViewDuration)) s",
+                  "- Average percentage viewed: \(String(format: "%.1f", a.averageViewPercentage)) %"]
+            if let r = a.revenue { l.append("- Estimated revenue: \(String(format: "%.2f", r))") }
+            l += ["", "### Daily", "", "| Day | Views | Watch min | Subs + | Subs − |", "|---|---:|---:|---:|---:|"]
+            l += a.daily.map { "| \(df.string(from: $0.date)) | \($0.views) | \($0.minutes) | \($0.subscribersGained) | \($0.subscribersLost) |" }
+            func slices(_ title: String, _ s: [YTSlice], _ unit: String) {
+                guard !s.isEmpty else { return }
+                l += ["", "### \(title)", ""] + s.map { "- \($0.label): \(String(format: "%.1f", $0.value))\(unit)" }
+            }
+            slices("Traffic sources (views)", a.traffic, "")
+            slices("Top countries (views)", a.countries, "")
+            slices("Audience (age, gender — % of viewers)", a.ageGender, " %")
+            if !a.topVideos.isEmpty {
+                let titles = Dictionary(videoStats.map { ($0.id, $0.title) }, uniquingKeysWith: { a, _ in a })
+                l += ["", "### Top videos in the period", "", "| Video | Views | Watch min | Avg % viewed | Subs + |", "|---|---:|---:|---:|---:|"]
+                l += a.topVideos.map { "| \((titles[$0.id] ?? $0.id).replacingOccurrences(of: "|", with: "/")) | \($0.views) | \($0.minutes) | \(String(format: "%.0f", $0.averageViewPercentage)) | \($0.subscribersGained) |" }
+            }
+        }
+        if !videoStats.isEmpty {
+            l += ["", "## Latest \(videoStats.count) uploads (lifetime)", "",
+                  "| Published | Length | Views | Likes | Comments | Engagement % | Title |", "|---|---:|---:|---:|---:|---:|---|"]
+            l += videoStats.map { "| \(df.string(from: $0.published)) | \($0.seconds)s | \($0.views) | \($0.likes) | \($0.comments) | \(String(format: "%.1f", $0.engagement)) | \($0.title.replacingOccurrences(of: "|", with: "/")) |" }
+        }
+        try? l.joined(separator: "\n").write(to: workspace.appendingPathComponent("analytics.md"), atomically: true, encoding: .utf8)
     }
 
     private func fetchText(_ url: URL, english: Bool) async throws -> String {
@@ -191,7 +261,7 @@ final class YouTubeStudio: ObservableObject {
             prompt: text,
             cwd: workspace,
             sessionId: sessionId,
-            systemPrompt: "You are working inside the YouTube studio folder described in CLAUDE.md. Read channel.md for the latest numbers when the question is about the channel.",
+            systemPrompt: Self.chatSystemPrompt,
             allowedTools: ["WebSearch", "WebFetch", "Read", "Write", "Edit", "Glob", "Grep", "Skill"],
             permissionMode: "acceptEdits",
             model: model
@@ -225,6 +295,17 @@ final class YouTubeStudio: ObservableObject {
             saveConversation()
         }
     }
+
+    private static let chatSystemPrompt = """
+    You are working inside the YouTube studio folder described in CLAUDE.md. For numbers, read \
+    analytics.md first (YouTube Analytics from the API: daily views, watch time, subscribers, traffic \
+    sources, countries, audience, every upload's stats) and channel.md otherwise.
+    The app draws charts: whenever numbers compare or change over time, add a chart block — a fenced \
+    code block whose language is `chart`, containing JSON like \
+    {"type":"bar","title":"Views per video","unit":"views","data":[{"label":"Video A","value":1200}]}. \
+    type is "bar" (rankings, comparisons), "line" (over time, labels in order) or "donut" (shares). \
+    Keep labels short (under 30 characters) and at most 12 data points. Prefer one clear chart to many.
+    """
 
     func stop() { run?.cancel() }
 
@@ -311,219 +392,4 @@ private final class YTFeedParser: NSObject, XMLParserDelegate {
     }
 }
 
-// MARK: - Page
-
-/// One-click starting points. `send: false` puts the text in the field to finish it first.
-private struct StudioAction: Identifiable {
-    let id = UUID()
-    let title: String
-    let symbol: String
-    let prompt: String
-    var send = true
-}
-
-private let studioActions: [StudioAction] = [
-    StudioAction(title: "Understand my channel", symbol: "sparkle.magnifyingglass", prompt: """
-        Analyse my channel. Read channel.md, look at my channel page and a few of my recent videos on the web. \
-        Tell me: who my audience is, my content pillars, which videos perform best and why (hooks, topics, length, format), \
-        and the 5 most impactful things I should change. Then update the "Channel profile" and "What performs" sections of CLAUDE.md.
-        """),
-    StudioAction(title: "Market research", symbol: "chart.line.uptrend.xyaxis", prompt: """
-        Do market research for my niche (French inspirational / motivational Shorts). Use web search. \
-        Find the leading channels in this niche, the formats and hooks that work right now, current trends and topics, \
-        and gaps I could fill. Save the report to research/ with today's date and give me the key takeaways.
-        """),
-    StudioAction(title: "Video ideas", symbol: "lightbulb", prompt: """
-        Give me 10 video ideas for my channel, based on what performs on my channel and in the niche. \
-        For each: a working title in French, the hook (first 2 seconds), and why it should work. Save them in ideas/.
-        """),
-    StudioAction(title: "Write a script", symbol: "doc.text", prompt: "Write a Short script (45–60 s, in French) about: ", send: false),
-    StudioAction(title: "Title, description, tags", symbol: "textformat", prompt: "Write 5 title options, a description and hashtags for this video: ", send: false),
-]
-
-struct HubYouTubePage: View {
-    @ObservedObject private var studio = YouTubeStudio.shared
-    @State private var draft = ""
-    @FocusState private var fieldFocused: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HubHero(page: .youtube, title: "YouTube",
-                    subtitle: "Scripts, research and ideas for \(studio.channelTitle), with your Claude plan.",
-                    compact: true)
-                .padding(.horizontal, 28)
-                .padding(.top, 24)
-            HStack(alignment: .top, spacing: 16) {
-                channelColumn.frame(width: 300)
-                chatColumn
-            }
-            .padding(.horizontal, 28)
-            .padding(.vertical, 18)
-        }
-        .task { if studio.videos.isEmpty { await studio.refresh() } }
-    }
-
-    // MARK: Channel
-
-    private var channelColumn: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                HubCard(padding: 14) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(studio.channelTitle).font(.system(size: 15, weight: .bold))
-                            Text(studio.subscribers.map { "\($0) subscribers" } ?? "@\(studio.handle)")
-                                .font(.system(size: 12)).foregroundColor(HubTheme.secondary)
-                        }
-                        Spacer()
-                        if studio.refreshing {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            HubIconButton(symbol: "arrow.clockwise", help: "Refresh") { Task { await studio.refresh() } }
-                        }
-                    }
-                    if let err = studio.refreshError {
-                        Text(err).font(.system(size: 11.5)).foregroundColor(HubTheme.red)
-                    }
-                    HStack(spacing: 8) {
-                        Button("Open channel") { NSWorkspace.shared.open(studio.channelURL) }
-                            .buttonStyle(HubButtonStyle())
-                        Button("Studio folder") { studio.openWorkspace() }
-                            .buttonStyle(HubButtonStyle())
-                    }
-                }
-                HubLabel("Latest uploads")
-                ForEach(studio.videos) { v in
-                    Button { if let u = URL(string: v.url) { NSWorkspace.shared.open(u) } } label: {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(v.title).font(.system(size: 12.5, weight: .medium)).lineLimit(2)
-                                .multilineTextAlignment(.leading)
-                            Text("\(v.views.formatted()) views · \(v.published.formatted(.relative(presentation: .named)))")
-                                .font(.system(size: 11)).foregroundColor(HubTheme.secondary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(HubTheme.card))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .scrollIndicators(.never)
-    }
-
-    // MARK: Chat
-
-    private var chatColumn: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        if studio.messages.isEmpty { emptyState }
-                        ForEach(studio.messages) { m in
-                            StudioMessageRow(message: m).id(m.id)
-                        }
-                        if studio.running {
-                            HStack(spacing: 8) {
-                                ProgressView().controlSize(.small)
-                                Text("Claude is working…").font(.system(size: 12)).foregroundColor(HubTheme.secondary)
-                            }
-                            .id("working")
-                        }
-                    }
-                    .padding(14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(HubTheme.card))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(HubTheme.line))
-                .onChange(of: studio.messages.count) { _, _ in
-                    withAnimation { proxy.scrollTo(studio.running ? AnyHashable("working") : AnyHashable(studio.messages.last?.id), anchor: .bottom) }
-                }
-            }
-            HubWrap(spacing: 6) {
-                ForEach(studioActions) { a in
-                    Button {
-                        if a.send { studio.send(a.prompt) } else { draft = a.prompt; fieldFocused = true }
-                    } label: {
-                        Label(a.title, systemImage: a.symbol).font(.system(size: 12, weight: .medium))
-                            .padding(.horizontal, 10).frame(height: 28)
-                            .background(Capsule().fill(Color.white.opacity(0.06)))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(studio.running)
-                }
-            }
-            HStack(alignment: .bottom, spacing: 8) {
-                TextField("Ask anything about your channel, a script, the market…", text: $draft, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .lineLimit(1...6)
-                    .focused($fieldFocused)
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(HubTheme.field))
-                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.white.opacity(0.1)))
-                    .onSubmit(send)
-                if studio.running {
-                    Button("Stop") { studio.stop() }.buttonStyle(HubButtonStyle())
-                } else {
-                    Button("Send", action: send).buttonStyle(HubButtonStyle(primary: true))
-                        .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-                HubIconButton(symbol: "square.and.pencil", help: "New conversation") { studio.newConversation() }
-            }
-        }
-    }
-
-    private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Start with “Understand my channel”").font(.system(size: 14, weight: .semibold))
-            Text("Claude reads your latest uploads, studies the channel and remembers what it learns in the studio folder. Then ask for research, ideas or scripts — everything it writes is saved there too.")
-                .font(.system(size: 12.5)).foregroundColor(HubTheme.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.bottom, 6)
-    }
-
-    private func send() {
-        let text = draft
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        draft = ""
-        studio.send(text)
-    }
-}
-
-/// A message: the user's on the right, Claude's in Markdown, tool steps as small grey lines.
-struct StudioMessageRow: View {
-    let message: StudioMessage
-
-    var body: some View {
-        switch message.role {
-        case .user:
-            HStack {
-                Spacer(minLength: 60)
-                Text(message.text)
-                    .font(.system(size: 13))
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(HubTheme.accent.opacity(0.22)))
-            }
-        case .assistant:
-            HStack(alignment: .top) {
-                ChatMarkdownView(markdown: message.text)
-                Spacer(minLength: 0)
-                HubIconButton(symbol: "doc.on.doc", help: "Copy") { NSPasteboard.copyText(message.text) }
-            }
-        case .activity:
-            Label(message.text, systemImage: "gearshape.2")
-                .font(.system(size: 11.5))
-                .foregroundColor(HubTheme.muted)
-                .lineLimit(1)
-        case .error:
-            Text(message.text)
-                .font(.system(size: 12.5))
-                .foregroundColor(HubTheme.red)
-                .textSelection(.enabled)
-        }
-    }
-}
 #endif

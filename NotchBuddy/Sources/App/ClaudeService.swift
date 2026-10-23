@@ -67,6 +67,8 @@ final class KeychainStore: @unchecked Sendable {
         "anthropic-api-key",
         // Claude subscription token (`claude setup-token`), used by ClaudeCLI
         "claude_oauth_token",
+        // YouTube: the user's own Google OAuth client and the refresh token (YouTubeAuth)
+        "youtube_oauth_client_id", "youtube_oauth_client_secret", "youtube_refresh_token",
         "google-api-key",
         "openai-api-key",
         "deepseek-api-key",
