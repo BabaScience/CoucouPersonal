@@ -25,9 +25,13 @@ final class HubWindowState: ObservableObject {
 
     func watch(_ window: NSWindow) {
         observers.forEach { NotificationCenter.default.removeObserver($0) }
+        // The glass panel floats over everything, so "on screen" is nearly always true: the
+        // decorative animations also wait for the panel to be the window in use.
         let names: [Notification.Name] = [NSWindow.didChangeOcclusionStateNotification,
                                           NSWindow.didMiniaturizeNotification,
                                           NSWindow.didDeminiaturizeNotification,
+                                          NSWindow.didBecomeKeyNotification,
+                                          NSWindow.didResignKeyNotification,
                                           NSWindow.willCloseNotification]
         observers = names.map { name in
             NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] note in
@@ -35,6 +39,7 @@ final class HubWindowState: ObservableObject {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     let on = !closing && window.occlusionState.contains(.visible) && !window.isMiniaturized
+                        && window.isKeyWindow
                     if on != self.visible { self.visible = on }
                 }
             }
