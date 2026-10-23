@@ -16,7 +16,7 @@ enum StudioPalette {
 struct HubYouTubePage: View {
     @ObservedObject private var studio = YouTubeStudio.shared
     @ObservedObject private var auth = YouTubeAuth.shared
-    @State private var tab = "overview"
+    @AppStorage("youtube.tab") private var tab = "overview"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -292,7 +292,7 @@ private struct YouTubeOverview: View {
                 }
                 .pickerStyle(.segmented).labelsHidden().frame(width: 260)
             }
-            LazyVStack(spacing: 6) {
+            VStack(spacing: 6) {
                 ForEach(list.prefix(40)) { v in
                     Button { NSWorkspace.shared.open(v.url) } label: {
                         HStack(spacing: 10) {
@@ -537,7 +537,9 @@ private struct StudioChat: View {
         VStack(alignment: .leading, spacing: 10) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
+                    // Not lazy: a lazy stack re-measured rows forever while new messages scrolled it
+                    // and a deck animated its height (the app froze, memory grew to gigabytes).
+                    VStack(alignment: .leading, spacing: 12) {
                         if studio.messages.isEmpty {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("Your studio").font(.system(size: 15, weight: .semibold))
@@ -566,7 +568,9 @@ private struct StudioChat: View {
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.white.opacity(0.08)))
                 .onChange(of: studio.messages.count) { _, _ in
-                    withAnimation { proxy.scrollTo(studio.running ? AnyHashable("working") : AnyHashable(studio.messages.last?.id), anchor: .bottom) }
+                    // After this layout pass, without animation.
+                    let target = studio.running ? AnyHashable("working") : AnyHashable(studio.messages.last?.id)
+                    DispatchQueue.main.async { proxy.scrollTo(target, anchor: .bottom) }
                 }
             }
             HubWrap(spacing: 6) {
