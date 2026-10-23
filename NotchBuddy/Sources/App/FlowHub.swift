@@ -82,14 +82,14 @@ enum HubPage: String, CaseIterable, Identifiable {
 
 /// The colors of the Coucou Flow window: the island's dark, with Coucou's orange.
 enum HubTheme {
-    /// OLED black: the window and the sidebar.
-    static let window = Color.black
-    static let sidebar = Color.black
+    /// Personal build: the window is frosted glass (`HubGlass`), so its layers are see-through tints.
+    static let window = Color.clear
+    static let sidebar = Color.clear
     /// The big card on the right, where the pages are.
-    static let panel = Color(hex: "#0E0F11")
-    static let card = Color(hex: "#18191C")
-    static let field = Color(hex: "#1F2024")
-    static let line = Color.white.opacity(0.07)
+    static let panel = Color.black.opacity(0.28)
+    static let card = Color.white.opacity(0.06)
+    static let field = Color.white.opacity(0.08)
+    static let line = Color.white.opacity(0.08)
     static let text = Color(hex: "#F5F6F8")
     static let body = Color(hex: "#E1E3E6")
     static let secondary = Color(hex: "#8E939C")
@@ -179,6 +179,15 @@ final class FlowHubController {
         return ProcessInfo.processInfo.systemUptime < 180
     }
 
+    /// ⌃⌥C: shows the panel, or hides it when it's in front.
+    func toggle() {
+        if let window, window.isVisible, window.isKeyWindow || window.occlusionState.contains(.visible) && NSApp.isActive {
+            window.orderOut(nil)
+        } else {
+            show()
+        }
+    }
+
     func show(_ page: HubPage? = nil) {
         if let page { router.page = page }
         if let window {
@@ -186,20 +195,42 @@ final class FlowHubController {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720),
+        // Personal build: a floating glass panel that stays above other apps, on every Space. It
+        // opens in the top-right corner the first time, then wherever it was left.
+        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1040, height: 700),
                            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                            backing: .buffered, defer: false)
         win.title = "Coucou"
         win.titlebarAppearsTransparent = true
         win.titleVisibility = .hidden
         win.appearance = NSAppearance(named: .darkAqua)
-        win.backgroundColor = .black
-        win.contentView = NSHostingView(rootView: FlowHubView(router: router, windowState: windowState))
+        win.isOpaque = false
+        win.backgroundColor = .clear
+        win.level = .floating
+        win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        win.isMovableByWindowBackground = true
+        let glass = NSVisualEffectView()
+        glass.material = .hudWindow
+        glass.blendingMode = .behindWindow
+        glass.state = .active
+        let host = NSHostingView(rootView: FlowHubView(router: router, windowState: windowState))
+        host.translatesAutoresizingMaskIntoConstraints = false
+        glass.addSubview(host)
+        NSLayoutConstraint.activate([
+            host.leadingAnchor.constraint(equalTo: glass.leadingAnchor),
+            host.trailingAnchor.constraint(equalTo: glass.trailingAnchor),
+            host.topAnchor.constraint(equalTo: glass.topAnchor),
+            host.bottomAnchor.constraint(equalTo: glass.bottomAnchor),
+        ])
+        win.contentView = glass
         windowState.watch(win)
-        win.contentMinSize = NSSize(width: 940, height: 600)
+        win.contentMinSize = NSSize(width: 860, height: 560)
         win.isReleasedWhenClosed = false
-        win.setFrameAutosaveName("CoucouFlowWindow")
-        if !win.setFrameUsingName("CoucouFlowWindow") { win.center() }
+        win.setFrameAutosaveName("CoucouGlassPanel")
+        if !win.setFrameUsingName("CoucouGlassPanel"), let screen = NSScreen.main {
+            let v = screen.visibleFrame
+            win.setFrameOrigin(NSPoint(x: v.maxX - win.frame.width - 16, y: v.maxY - win.frame.height - 16))
+        }
         window = win
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

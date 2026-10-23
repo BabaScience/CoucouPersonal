@@ -730,6 +730,11 @@ final class IslandWindowController: NSWindowController {
             #if !APPSTORE
             ScreenAgent.shared.toggleHUD()
             #endif
+
+        case .showCoucou:
+            #if !APPSTORE
+            FlowHubController.shared.toggle()
+            #endif
         }
     }
 
