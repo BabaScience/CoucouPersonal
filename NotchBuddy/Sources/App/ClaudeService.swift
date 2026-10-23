@@ -26,7 +26,10 @@ enum Keychain {
             kSecAttrAccessible as String:   kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
             kSecAttrSynchronizable as String: kCFBooleanFalse!,
         ]
-        SecItemAdd(item as CFDictionary, nil)
+        let status = SecItemAdd(item as CFDictionary, nil)
+        if status != errSecSuccess {
+            appendAppLog("nb.log", "[Keychain] save \(key) failed: \(status)")
+        }
     }
 
     static func load(key: String) -> String? {
@@ -62,6 +65,8 @@ final class KeychainStore: @unchecked Sendable {
 
     private static let allKeys = [
         "anthropic-api-key",
+        // Claude subscription token (`claude setup-token`), used by ClaudeCLI
+        "claude_oauth_token",
         "google-api-key",
         "openai-api-key",
         "deepseek-api-key",

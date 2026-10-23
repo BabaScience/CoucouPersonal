@@ -10,8 +10,8 @@ import UniformTypeIdentifiers
 /// a child of Coucou, so it uses Coucou's Screen Recording and Accessibility permissions. The
 /// running app draws the pointer and the messages: the two talk with distributed notifications.
 ///
-/// Coordinates are screen points of the main display, origin top-left — the same as the pixels of
-/// the screenshots this tool makes.
+/// Coordinates are pixels of the last screenshot (origin top-left); the tool converts them to screen
+/// points with the scale it saved when taking it.
 enum ScreenTool {
     static let pointNote   = Notification.Name("fr.coucou.screen.point")
     static let sayNote     = Notification.Name("fr.coucou.screen.say")
@@ -19,7 +19,8 @@ enum ScreenTool {
     static let replyNote   = Notification.Name("fr.coucou.screen.reply")
 
     static let usage = """
-    coucou-screen screenshot                      capture the main screen, prints the PNG path
+    coucou-screen screenshot                      capture the main screen, prints the image path
+    coucou-screen zoom X Y W H                    close-up of a region of the last screenshot
     coucou-screen point X Y "instruction"         show the user where to click, wait for them
     coucou-screen say "message"                   show a message to the user
     coucou-screen click X Y [--double|--right]    (Do it mode only)
@@ -42,6 +43,7 @@ enum ScreenTool {
         }
         switch cmd {
         case "screenshot": screenshot()
+        case "zoom":       zoom(rest)
         case "point":      point(rest)
         case "say":
             post(sayNote, ["text": rest.joined(separator: " ")])
@@ -63,58 +65,110 @@ enum ScreenTool {
 
     // MARK: Eyes
 
-    private static func screenshot() {
+    /// The longest side Claude sees in full detail: bigger images get shrunk by Claude Code
+    /// (an ultrawide came out 600 px wide), so screenshots are made at this size.
+    private static let maxSide: CGFloat = 1568
+
+    private static var shotsDir: URL {
+        URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("shots")
+    }
+    private static var scaleFile: URL { shotsDir.appendingPathComponent(".scale") }
+
+    /// Screen points per screenshot pixel, from the last screenshot (1 before any).
+    private static var pointsPerPixel: CGFloat {
+        guard let s = try? String(contentsOf: scaleFile, encoding: .utf8), let v = Double(s) else { return 1 }
+        return CGFloat(v)
+    }
+
+    /// Captures the main display (or `rect` of it, in points) at full resolution.
+    private static func capture(_ rect: CGRect? = nil) -> CGImage {
         guard CGPreflightScreenCaptureAccess() else {
             fail("Coucou has no Screen Recording permission. Ask the user to allow Coucou in System Settings → Privacy & Security → Screen Recording, then restart Coucou.")
         }
-        let dir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("shots")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        prune(dir, keep: 12)
-        let stamp = Int(Date().timeIntervalSince1970 * 1000)
-        let raw = dir.appendingPathComponent("raw-\(stamp).png")
-        let out = dir.appendingPathComponent("screen-\(stamp).png")
-
+        try? FileManager.default.createDirectory(at: shotsDir, withIntermediateDirectories: true)
+        let raw = shotsDir.appendingPathComponent("raw-\(Int(Date().timeIntervalSince1970 * 1000)).png")
         // The pointer and the HUD step aside while the picture is taken.
         post(captureNote, ["state": "begin"])
         Thread.sleep(forTimeInterval: 0.25)
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        p.arguments = ["-x", "-C", "-m", "-t", "png", raw.path]
+        var args = ["-x", "-C", "-m", "-t", "png"]
+        if let r = rect { args += ["-R", "\(Int(r.minX)),\(Int(r.minY)),\(Int(r.width)),\(Int(r.height))"] }
+        p.arguments = args + [raw.path]
         try? p.run()
         p.waitUntilExit()
         post(captureNote, ["state": "end"])
-
-        let bounds = CGDisplayBounds(CGMainDisplayID())
-        let size = CGSize(width: bounds.width, height: bounds.height)
+        defer { try? FileManager.default.removeItem(at: raw) }
         guard let src = CGImageSourceCreateWithURL(raw as CFURL, nil),
-              let img = CGImageSourceCreateImageAtIndex(src, 0, nil),
-              let ctx = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8,
+              let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { fail("The screenshot failed.") }
+        return img
+    }
+
+    /// Writes `img` as a JPEG of `size` pixels; returns its path.
+    private static func save(_ img: CGImage, size: CGSize, prefix: String) -> URL {
+        prune(shotsDir, keep: 12)
+        let out = shotsDir.appendingPathComponent("\(prefix)-\(Int(Date().timeIntervalSince1970 * 1000)).jpg")
+        guard let ctx = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8,
                                   bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
-                                  bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else {
-            fail("The screenshot failed.")
-        }
-        // Scaled to points: one image pixel = one screen point, so coordinates can be used as is.
+                                  bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { fail("The screenshot failed.") }
         ctx.interpolationQuality = .high
         ctx.draw(img, in: CGRect(origin: .zero, size: size))
         guard let scaled = ctx.makeImage(),
-              let dest = CGImageDestinationCreateWithURL(out as CFURL, UTType.png.identifier as CFString, 1, nil) else {
+              let dest = CGImageDestinationCreateWithURL(out as CFURL, UTType.jpeg.identifier as CFString, 1, nil) else {
             fail("The screenshot failed.")
         }
-        CGImageDestinationAddImage(dest, scaled, nil)
+        CGImageDestinationAddImage(dest, scaled, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
         CGImageDestinationFinalize(dest)
-        try? FileManager.default.removeItem(at: raw)
+        return out
+    }
+
+    private static func screenshot() {
+        let bounds = CGDisplayBounds(CGMainDisplayID())
+        let img = capture()
+        let k = min(1, maxSide / max(bounds.width, bounds.height))
+        let size = CGSize(width: (bounds.width * k).rounded(), height: (bounds.height * k).rounded())
+        let out = save(img, size: size, prefix: "screen")
+        // Every command takes coordinates in this image's pixels and converts them back.
+        try? String(Double(bounds.width / size.width)).write(to: scaleFile, atomically: true, encoding: .utf8)
         let front = NSWorkspace.shared.frontmostApplication?.localizedName ?? "unknown"
-        let mouse = CGEvent(source: nil)?.location ?? .zero
+        let mouse = toPixels(CGEvent(source: nil)?.location ?? .zero)
         done("""
         \(out.path)
-        Size \(Int(size.width))x\(Int(size.height)) (= screen points; use these coordinates). \
-        Front app: \(front). Mouse at \(Int(mouse.x)),\(Int(mouse.y)). Read the file to see the screen.
+        Size \(Int(size.width))x\(Int(size.height)) pixels. All coordinates you pass to coucou-screen are pixels of \
+        this image. Front app: \(front). Mouse at \(Int(mouse.x)),\(Int(mouse.y)). Read the file to see the screen; \
+        use `zoom` to read small text.
         """)
+    }
+
+    /// A close-up of part of the last screenshot, to read small text.
+    private static func zoom(_ args: [String]) {
+        guard args.count >= 4, let x = Double(args[0]), let y = Double(args[1]),
+              let w = Double(args[2]), let h = Double(args[3]), w > 0, h > 0 else {
+            fail("Usage: zoom X Y W H (a region of the last screenshot, in its pixels).")
+        }
+        let k = pointsPerPixel
+        let region = CGRect(x: x * k, y: y * k, width: w * k, height: h * k)
+        let img = capture(region)
+        let fit = min(1, maxSide / max(CGFloat(img.width), CGFloat(img.height)))
+        let size = CGSize(width: (CGFloat(img.width) * fit).rounded(), height: (CGFloat(img.height) * fit).rounded())
+        let out = save(img, size: size, prefix: "zoom")
+        let f = w / Double(size.width)
+        done("""
+        \(out.path)
+        Close-up of \(Int(x)),\(Int(y)) \(Int(w))x\(Int(h)), shown at \(Int(size.width))x\(Int(size.height)). \
+        To act on something in it, convert back: screenshot x = \(Int(x)) + zx * \(String(format: "%.3f", f)), \
+        y = \(Int(y)) + zy * \(String(format: "%.3f", f)).
+        """)
+    }
+
+    private static func toPixels(_ p: CGPoint) -> CGPoint {
+        let k = pointsPerPixel
+        return CGPoint(x: p.x / k, y: p.y / k)
     }
 
     private static func prune(_ dir: URL, keep: Int) {
         let files = ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
-            .filter { $0.pathExtension == "png" }
+            .filter { ["png", "jpg"].contains($0.pathExtension) }
             .sorted { $0.lastPathComponent > $1.lastPathComponent }
         for f in files.dropFirst(keep) { try? FileManager.default.removeItem(at: f) }
     }
@@ -145,9 +199,8 @@ enum ScreenTool {
             print("The user stopped the session. Stop now and don't take any further action.")
             exit(1)
         case "click":
-            let x = (reply["x"] as? Double).map { Int($0) } ?? -1
-            let y = (reply["y"] as? Double).map { Int($0) } ?? -1
-            done("The user clicked at \(x),\(y). Take a new screenshot to check the result before the next step.")
+            let at = toPixels(CGPoint(x: reply["x"] as? Double ?? 0, y: reply["y"] as? Double ?? 0))
+            done("The user clicked at \(Int(at.x)),\(Int(at.y)). Take a new screenshot to check the result before the next step.")
         default:
             done("The user pressed Next. Take a new screenshot to check the result before the next step.")
         }
@@ -228,9 +281,10 @@ enum ScreenTool {
 
     private static func xy(_ args: [String]) -> CGPoint {
         guard args.count >= 2, let x = Double(args[0]), let y = Double(args[1]) else {
-            fail("Expected X Y coordinates (screen points, from the last screenshot).")
+            fail("Expected X Y coordinates (pixels of the last screenshot).")
         }
-        return CGPoint(x: x, y: y)
+        let k = pointsPerPixel
+        return CGPoint(x: x * k, y: y * k)
     }
 
     private static func post(_ name: Notification.Name, _ info: [String: Any]) {

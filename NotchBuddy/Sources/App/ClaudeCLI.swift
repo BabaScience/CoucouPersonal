@@ -49,12 +49,12 @@ enum ClaudeCLI {
     }
 
     static var token: String? {
-        let t = KeychainStore.shared.get(tokenKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let t = KeychainStore.shared.get(tokenKey).map(compact)
         return (t?.isEmpty ?? true) ? nil : t
     }
 
     static func saveToken(_ value: String) {
-        let t = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let t = compact(value)
         if t.isEmpty { KeychainStore.shared.remove(tokenKey) } else { KeychainStore.shared.set(tokenKey, value: t) }
     }
 
@@ -126,8 +126,8 @@ enum ClaudeCLI {
             let rest = stdout.fileHandleForReading.readDataToEndOfFile()
             var events = parser.feed(rest)
             let status = proc.terminationStatus
-            let errText = String(data: errBuffer.data, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let errText = ClaudeCLI.redact(String(data: errBuffer.data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
             Task { @MainActor in
                 if !parser.sawResult {
                     let message = run.cancelled ? "Stopped."
@@ -147,6 +147,18 @@ enum ClaudeCLI {
         stdin.fileHandleForWriting.write(Data(prompt.utf8))
         try? stdin.fileHandleForWriting.close()
         return run
+    }
+
+    /// A token copied from Terminal can carry the line breaks of its wrapping: tokens have no
+    /// spaces, so every whitespace goes.
+    private static func compact(_ s: String) -> String {
+        s.components(separatedBy: .whitespacesAndNewlines).joined()
+    }
+
+    /// Hides tokens and keys that the CLI may echo in an error.
+    nonisolated static func redact(_ text: String) -> String {
+        text.replacingOccurrences(of: #"sk-ant-[A-Za-z0-9_\-]+(\s+[A-Za-z0-9_\-]+)*"#, with: "sk-ant-•••",
+                                  options: .regularExpression)
     }
 
     /// Whether the error looks like a sign-in problem, to point the user at `claude setup-token`.
@@ -209,6 +221,7 @@ private final class StreamParser: @unchecked Sendable {
             let isError = (obj["is_error"] as? Bool) ?? false
             var text = obj["result"] as? String ?? ""
             if text.isEmpty, isError { text = (obj["subtype"] as? String) ?? "Error" }
+            if isError { text = ClaudeCLI.redact(text) }
             return [.done(result: text, sessionId: id, isError: isError)]
         default:
             break

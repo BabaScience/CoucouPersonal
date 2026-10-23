@@ -9,6 +9,9 @@ xcodebuild -scheme NotchBuddy -configuration Debug -derivedDataPath build/dd bui
   | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
 APP="build/dd/Build/Products/Debug/Coucou.app"
 [ -d "$APP" ] || { echo "Build failed"; exit 1; }
+# A whole-bundle ad-hoc signature with the bundle id: the Keychain and the privacy permissions
+# recognise the app by it (the linker's signature only covers the executable).
+codesign --force --deep --sign - --identifier com.greatbamba.coucou "$APP"
 
 osascript -e 'quit app id "fr.louisraille.NotchBuddy"' 2>/dev/null || true
 osascript -e 'quit app id "com.greatbamba.coucou"' 2>/dev/null || true

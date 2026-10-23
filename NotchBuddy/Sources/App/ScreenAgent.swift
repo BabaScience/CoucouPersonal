@@ -132,6 +132,7 @@ final class ScreenAgent: ObservableObject {
         let parts = command.components(separatedBy: "coucou-screen ").last?.split(separator: " ").map(String.init) ?? []
         switch parts.first {
         case "screenshot": return "Looking at the screen"
+        case "zoom":       return "Looking closer"
         case "point":      return "Pointing"
         case "say":        return "Message"
         case "click":      return "Clicking at \(parts.dropFirst().prefix(2).joined(separator: ", "))"
@@ -273,11 +274,12 @@ final class ScreenAgent: ObservableObject {
         You are Coucou's screen assistant on the user's Mac. You see and use the screen only through \
         this command, run with the Bash tool (always with its full path):
 
-          \(tool) screenshot                 → saves a PNG of the main screen and prints its path; Read that file to see the screen
+          \(tool) screenshot                 → saves an image of the main screen and prints its path; Read that file to see the screen
+          \(tool) zoom X Y W H              → close-up of a region of the last screenshot, to read small text
           \(tool) point X Y "instruction"    → shows a pulsing pointer at X,Y with a short instruction, then waits until the user clicks or presses Next
           \(tool) say "message"              → shows a message to the user without pointing
 
-        Coordinates are the pixels of the latest screenshot (= screen points, origin top-left). \
+        Coordinates are always pixels of the latest screenshot (origin top-left); the tool converts them. \
         Always take a fresh screenshot before deciding where something is; never guess positions.
 
         """
