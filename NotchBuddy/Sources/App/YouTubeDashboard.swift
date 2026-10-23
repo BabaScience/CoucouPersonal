@@ -430,8 +430,16 @@ struct YouTubeConnectCard: View {
                     Button(auth.signingIn ? "Waiting for Google…" : "Sign in with Google") { auth.signIn() }
                         .buttonStyle(HubButtonStyle(primary: true))
                         .disabled(auth.signingIn)
-                    Button("Change client") { KeychainStore.shared.remove(YouTubeAuth.clientIdKey); auth.objectWillChange.send() }
+                    if auth.signingIn {
+                        Button("Cancel") { auth.cancelSignIn() }.buttonStyle(HubButtonStyle())
+                    }
+                    Button("Change client") { auth.resetClient() }
                         .buttonStyle(HubButtonStyle())
+                }
+                if auth.signingIn {
+                    Text("Finish in your browser. If Google shows an error page, press Cancel, then Change client and paste the values again.")
+                        .font(.system(size: 11)).foregroundColor(HubTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
                 Text("One-time setup in Google Cloud (free): create a project, enable “YouTube Data API v3” and “YouTube Analytics API”, set up the OAuth consent screen (External, add yourself as a test user), then create an OAuth client ID of type “Desktop app” and paste it here.")
@@ -444,7 +452,9 @@ struct YouTubeConnectCard: View {
                         .padding(.horizontal, 12).frame(height: 34)
                         .background(RoundedRectangle(cornerRadius: 9).fill(HubTheme.field))
                         .frame(width: 220)
-                    Button("Save") { auth.saveClient(id: clientId, secret: clientSecret); clientId = ""; clientSecret = "" }
+                    Button("Save") {
+                        if auth.saveClient(id: clientId, secret: clientSecret) { clientId = ""; clientSecret = "" }
+                    }
                         .buttonStyle(HubButtonStyle(primary: true))
                         .disabled(clientId.isEmpty || clientSecret.isEmpty)
                 }

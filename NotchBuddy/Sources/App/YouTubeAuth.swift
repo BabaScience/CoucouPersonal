@@ -35,12 +35,39 @@ final class YouTubeAuth: ObservableObject {
     var clientId: String { KeychainStore.shared.get(Self.clientIdKey) ?? "" }
     var hasClient: Bool { !clientId.isEmpty && !(KeychainStore.shared.get(Self.clientSecretKey) ?? "").isEmpty }
 
-    func saveClient(id: String, secret: String) {
-        let i = id.trimmingCharacters(in: .whitespacesAndNewlines)
-        let s = secret.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !i.isEmpty { KeychainStore.shared.set(Self.clientIdKey, value: i) }
-        if !s.isEmpty { KeychainStore.shared.set(Self.clientSecretKey, value: s) }
+    /// Saves the client after a sanity check: a Desktop client's ID ends in
+    /// ".apps.googleusercontent.com" (a wrong one gets a bare "400 malformed" page from Google).
+    @discardableResult
+    func saveClient(id: String, secret: String) -> Bool {
+        let i = id.components(separatedBy: .whitespacesAndNewlines).joined()
+        let s = secret.components(separatedBy: .whitespacesAndNewlines).joined()
+        guard i.hasSuffix(".apps.googleusercontent.com") else {
+            error = "That Client ID doesn't look right: it should end with “.apps.googleusercontent.com”. Copy it again from Google Cloud → Clients → Coucou."
+            return false
+        }
+        guard !s.isEmpty, !s.hasSuffix(".apps.googleusercontent.com") else {
+            error = "The Client secret looks like a Client ID. Copy the secret (it usually starts with “GOCSPX-”)."
+            return false
+        }
+        error = nil
+        KeychainStore.shared.set(Self.clientIdKey, value: i)
+        KeychainStore.shared.set(Self.clientSecretKey, value: s)
         objectWillChange.send()
+        return true
+    }
+
+    /// Forgets the client (and any sign-in in progress) to enter it again.
+    func resetClient() {
+        cancelSignIn()
+        KeychainStore.shared.remove(Self.clientIdKey)
+        KeychainStore.shared.remove(Self.clientSecretKey)
+        error = nil
+        objectWillChange.send()
+    }
+
+    func cancelSignIn() {
+        guard signingIn else { return }
+        finish()
     }
 
     func signOut() {
