@@ -191,7 +191,10 @@ private struct YouTubeOverview: View {
 
     private func topVideos(_ a: YTAnalytics) -> some View {
         let titles = studio.videoTitles
-        let rows = a.topVideos.prefix(6).map { (title: short(titles[$0.id] ?? $0.id), views: $0.views, pct: $0.averageViewPercentage) }
+        // Numbered: several uploads can share a title, and the chart groups equal labels into one bar.
+        let rows = a.topVideos.prefix(6).enumerated().map { i, v in
+            (title: "\(i + 1). " + short(titles[v.id] ?? v.id), views: v.views, pct: v.averageViewPercentage)
+        }
         return glass {
             Text("Top videos").font(.system(size: 13, weight: .semibold))
             if rows.isEmpty { empty } else {

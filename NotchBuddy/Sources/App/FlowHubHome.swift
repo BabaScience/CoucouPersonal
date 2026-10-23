@@ -142,7 +142,7 @@ private struct HubEntryRow: View {
                 if let app = entry.app, !app.isEmpty {
                     Text(app)
                         .font(.system(size: 11))
-                        .foregroundColor(Color(hex: "#A4A9B1"))
+                        .foregroundColor(Color.white.opacity(0.78))
                         .lineLimit(1)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)
@@ -221,7 +221,7 @@ private struct HubNotesPromo: View {
             Text("hub.notes-promo")
                 .font(.system(size: 13))
                 .lineSpacing(2)
-                .foregroundColor(Color(hex: "#A4A9B1"))
+                .foregroundColor(Color.white.opacity(0.78))
                 .fixedSize(horizontal: false, vertical: true)
             Button { router.page = .notes } label: {
                 Text("hub.notes-promo-open")

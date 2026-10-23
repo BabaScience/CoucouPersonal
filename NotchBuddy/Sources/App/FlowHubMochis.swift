@@ -302,7 +302,7 @@ struct HubHero<Trailing: View>: View {
                     if let subtitle {
                         Text(subtitle)
                             .font(.system(size: 14))
-                            .foregroundColor(Color(hex: "#B7BBC2"))
+                            .foregroundColor(Color.white.opacity(0.84))
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: 420, alignment: .leading)
                     }

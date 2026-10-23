@@ -86,14 +86,15 @@ enum HubTheme {
     static let window = Color.clear
     static let sidebar = Color.clear
     /// The big card on the right, where the pages are.
-    static let panel = Color.black.opacity(0.28)
-    static let card = Color.white.opacity(0.06)
-    static let field = Color.white.opacity(0.08)
-    static let line = Color.white.opacity(0.08)
-    static let text = Color(hex: "#F5F6F8")
-    static let body = Color(hex: "#E1E3E6")
-    static let secondary = Color(hex: "#8E939C")
-    static let muted = Color(hex: "#6B7079")
+    static let panel = Color.white.opacity(0.035)
+    static let card = Color.white.opacity(0.08)
+    static let field = Color.white.opacity(0.10)
+    static let line = Color.white.opacity(0.14)
+    /// Bright on glass: white, then softer whites (the greys of the black window washed out).
+    static let text = Color.white
+    static let body = Color.white.opacity(0.92)
+    static let secondary = Color.white.opacity(0.74)
+    static let muted = Color.white.opacity(0.56)
     static let accent = Color(hex: "#FB923C")
     static let onAccent = Color(hex: "#170C04")
     static let green = Color(hex: "#34D399")
@@ -197,12 +198,11 @@ final class FlowHubController {
         }
         // Personal build: a floating glass panel that stays above other apps, on every Space. It
         // opens in the top-right corner the first time, then wherever it was left.
-        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1040, height: 700),
-                           styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-                           backing: .buffered, defer: false)
+        let win = HubGlassWindow(contentRect: NSRect(x: 0, y: 0, width: 1040, height: 700),
+                                 styleMask: [.borderless, .resizable],
+                                 backing: .buffered, defer: false)
         win.title = "Coucou"
-        win.titlebarAppearsTransparent = true
-        win.titleVisibility = .hidden
+        win.hasShadow = true
         win.appearance = NSAppearance(named: .darkAqua)
         win.isOpaque = false
         win.backgroundColor = .clear
@@ -213,6 +213,10 @@ final class FlowHubController {
         glass.material = .hudWindow
         glass.blendingMode = .behindWindow
         glass.state = .active
+        glass.wantsLayer = true
+        glass.layer?.cornerRadius = HubGlassWindow.radius
+        glass.layer?.cornerCurve = .continuous
+        glass.layer?.masksToBounds = true
         let host = NSHostingView(rootView: FlowHubView(router: router, windowState: windowState))
         host.translatesAutoresizingMaskIntoConstraints = false
         glass.addSubview(host)
@@ -237,6 +241,32 @@ final class FlowHubController {
     }
 }
 
+/// The frameless glass window: no system frame (its dark rim), rounded like Apple's glass, and still
+/// able to take the keyboard for the text fields.
+final class HubGlassWindow: NSWindow {
+    static let radius: CGFloat = 24
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
+/// A small round close button (the window has no traffic lights).
+struct HubCloseButton: View {
+    let action: () -> Void
+    @State private var hover = false
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 9.5, weight: .bold))
+                .foregroundColor(Color.white.opacity(hover ? 0.95 : 0.6))
+                .frame(width: 22, height: 22)
+                .background(Circle().fill(Color.white.opacity(hover ? 0.18 : 0.08)))
+        }
+        .buttonStyle(.plain)
+        .help("Hide Coucou (⌃⌥C)")
+        .onHover { hover = $0 }
+    }
+}
+
 struct FlowHubView: View {
     @ObservedObject var router: HubRouter
     @ObservedObject var windowState: HubWindowState
@@ -252,12 +282,20 @@ struct FlowHubView: View {
                         .fill(HubTheme.panel)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Color.white.opacity(0.07)))
+                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Color.white.opacity(0.10)))
                 .padding(.top, 10)
                 .padding(.bottom, 10)
                 .padding(.trailing, 10)
         }
-        .background(HubTheme.window)
+        .background(LinearGradient(colors: [Color.black.opacity(0.16), Color.black.opacity(0.30)],
+                                   startPoint: .top, endPoint: .bottom))
+        .overlay(
+            // Liquid-glass edge: light catches the top, fades down the sides.
+            RoundedRectangle(cornerRadius: HubGlassWindow.radius, style: .continuous)
+                .strokeBorder(LinearGradient(colors: [Color.white.opacity(0.42), Color.white.opacity(0.10), Color.white.opacity(0.22)],
+                                             startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                .allowsHitTesting(false)
+        )
         .foregroundColor(HubTheme.text)
         .preferredColorScheme(.dark)
         .tint(HubTheme.accent)
@@ -306,11 +344,12 @@ private struct HubSidebar: View {
                     .offset(y: -4)
                 Text(verbatim: "Coucou")
                     .font(.system(size: 18, weight: .bold))
+                Spacer(minLength: 0)
+                HubCloseButton { FlowHubController.shared.toggle() }
             }
             .padding(.horizontal, 8)
-            // Halfway between the window's buttons and "FLOW".
-            .padding(.top, 25)
-            .padding(.bottom, 31)
+            .padding(.top, 20)
+            .padding(.bottom, 24)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
@@ -351,7 +390,7 @@ private struct HubSidebar: View {
                 Text(ready ? String(format: String(localized: "hub.status-ready %@"), flow.key.label)
                      : (flow.isEnabled ? String(localized: "hub.status-access") : String(localized: "hub.status-off")))
                     .font(.system(size: 12))
-                    .foregroundColor(Color(hex: "#A4A9B1"))
+                    .foregroundColor(Color.white.opacity(0.78))
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                 Spacer(minLength: 0)
@@ -394,11 +433,13 @@ private struct HubSidebarItem: View {
                     .font(.system(size: 14, weight: selected ? .semibold : .regular))
                 Spacer(minLength: 0)
             }
-            .foregroundColor(selected ? HubTheme.text : Color(hex: "#B7BBC2"))
+            .foregroundColor(selected ? HubTheme.text : Color.white.opacity(0.84))
             .padding(.horizontal, 10)
             .frame(height: 32)
-            .background(RoundedRectangle(cornerRadius: 9)
-                .fill(Color.white.opacity(selected ? 0.08 : (hover ? 0.04 : 0))))
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.white.opacity(selected ? 0.16 : (hover ? 0.07 : 0))))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.white.opacity(selected ? 0.18 : 0)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -543,7 +584,7 @@ struct HubIconButton: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundColor(hover ? HubTheme.text : Color(hex: "#A4A9B1"))
+                .foregroundColor(hover ? HubTheme.text : Color.white.opacity(0.78))
                 .frame(width: 28, height: 28)
                 .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(hover ? 0.1 : 0.05)))
                 .contentShape(Rectangle())
