@@ -2,6 +2,7 @@
 import AppKit
 import ApplicationServices
 import ImageIO
+import ScreenCaptureKit
 import UniformTypeIdentifiers
 
 /// `Coucou --screen-tool <command>`: the hands and eyes of the screen assistant.
@@ -159,26 +160,41 @@ enum ScreenTool {
         }
 
         /// Captures the main display (or `rect` of it, in points) at full resolution.
-        func capture(_ rect: CGRect? = nil) throws -> CGImage {
+        /// Captures the main display (or `rect` of it, in points) with ScreenCaptureKit, inside the
+        /// app so its own Screen Recording permission applies. Coucou's windows (the panel, the
+        /// pointer) are left out of the picture. `pixels` is the longest side wanted.
+        func capture(_ rect: CGRect? = nil, pixels: CGFloat) throws -> CGImage {
             guard CGPreflightScreenCaptureAccess() else {
-                try ScreenTool.fail("Coucou has no Screen Recording permission. Ask the user to allow Coucou in System Settings → Privacy & Security → Screen Recording, then restart Coucou.")
+                try ScreenTool.fail("Coucou has no Screen Recording permission. Ask the user to allow Coucou Personal in System Settings → Privacy & Security → Screen Recording, then restart it.")
             }
-            try? FileManager.default.createDirectory(at: shotsDir, withIntermediateDirectories: true)
-            let raw = shotsDir.appendingPathComponent("raw-\(Int(Date().timeIntervalSince1970 * 1000)).png")
-            // The pointer and the HUD step aside while the picture is taken.
-            DispatchQueue.main.sync { MainActor.assumeIsolated { ScreenAgent.shared.setCapturing(true) } }
-            Thread.sleep(forTimeInterval: 0.25)
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-            var args = ["-x", "-C", "-m", "-t", "png"]
-            if let r = rect { args += ["-R", "\(Int(r.minX)),\(Int(r.minY)),\(Int(r.width)),\(Int(r.height))"] }
-            p.arguments = args + [raw.path]
-            try? p.run()
-            p.waitUntilExit()
-            DispatchQueue.main.sync { MainActor.assumeIsolated { ScreenAgent.shared.setCapturing(false) } }
-            defer { try? FileManager.default.removeItem(at: raw) }
-            guard let src = CGImageSourceCreateWithURL(raw as CFURL, nil),
-                  let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { try ScreenTool.fail("The screenshot failed.") }
+            final class Box: @unchecked Sendable { var image: CGImage?; var error: Error? }
+            let box = Box()
+            let done = DispatchSemaphore(value: 0)
+            Task {
+                do {
+                    let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+                    guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() })
+                            ?? content.displays.first else { throw CocoaError(.fileNoSuchFile) }
+                    let mine = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
+                    let filter = SCContentFilter(display: display, excludingApplications: mine, exceptingWindows: [])
+                    let area = rect ?? CGRect(x: 0, y: 0, width: CGFloat(display.width), height: CGFloat(display.height))
+                    // Output pixels per point: shrunk to fit `pixels`, at most the display's own density.
+                    let fit = min(CGFloat(filter.pointPixelScale), pixels / max(area.width, area.height))
+                    let config = SCStreamConfiguration()
+                    if let rect { config.sourceRect = rect }
+                    config.width = max(1, Int((area.width * fit).rounded()))
+                    config.height = max(1, Int((area.height * fit).rounded()))
+                    config.showsCursor = true
+                    box.image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+                } catch {
+                    box.error = error
+                }
+                done.signal()
+            }
+            if done.wait(timeout: .now() + 10) == .timedOut { try ScreenTool.fail("The screenshot timed out.") }
+            guard let img = box.image else {
+                try ScreenTool.fail("The screenshot failed: \(box.error?.localizedDescription ?? "unknown error").")
+            }
             return img
         }
 
@@ -202,7 +218,7 @@ enum ScreenTool {
 
         func screenshot() throws {
             let bounds = CGDisplayBounds(CGMainDisplayID())
-            let img = try capture()
+            let img = try capture(pixels: Self.maxSide)
             let k = min(1, Self.maxSide / max(bounds.width, bounds.height))
             let size = CGSize(width: (bounds.width * k).rounded(), height: (bounds.height * k).rounded())
             let out = try save(img, size: size, prefix: "screen")
@@ -226,7 +242,7 @@ enum ScreenTool {
             }
             let k = pointsPerPixel
             let region = CGRect(x: x * k, y: y * k, width: w * k, height: h * k)
-            let img = try capture(region)
+            let img = try capture(region, pixels: Self.maxSide)
             let fit = min(1, Self.maxSide / max(CGFloat(img.width), CGFloat(img.height)))
             let size = CGSize(width: (CGFloat(img.width) * fit).rounded(), height: (CGFloat(img.height) * fit).rounded())
             let out = try save(img, size: size, prefix: "zoom")
@@ -273,17 +289,16 @@ enum ScreenTool {
         }
 
         func type(_ text: String) throws {
-            let units = Array(text.utf16)
-            var i = 0
-            while i < units.count {
-                let chunk = Array(units[i..<min(i + 16, units.count)])
+            // One character per key event: many apps (Calculator, games, terminals) only read the
+            // first character of a multi-character event.
+            for ch in text {
+                let units = Array(String(ch).utf16)
                 for down in [true, false] {
                     let e = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down)
-                    e?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk)
+                    e?.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
                     e?.post(tap: .cghidEventTap)
                 }
-                usleep(15_000)
-                i += 16
+                usleep(12_000)
             }
             try ScreenTool.done("Typed \(text.count) characters.")
         }
