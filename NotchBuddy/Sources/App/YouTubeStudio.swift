@@ -324,11 +324,30 @@ final class YouTubeStudio: ObservableObject {
     You are working inside the YouTube studio folder described in CLAUDE.md. For numbers, read \
     analytics.md first (YouTube Analytics from the API: daily views, watch time, subscribers, traffic \
     sources, countries, audience, every upload's stats) and channel.md otherwise.
-    The app draws charts: whenever numbers compare or change over time, add a chart block — a fenced \
-    code block whose language is `chart`, containing JSON like \
-    {"type":"bar","title":"Views per video","unit":"views","data":[{"label":"Video A","value":1200}]}. \
-    type is "bar" (rankings, comparisons), "line" (over time, labels in order) or "donut" (shares). \
-    Keep labels short (under 30 characters) and at most 12 data points. Prefer one clear chart to many.
+
+    ANSWER AS A SHORT PRESENTATION, NOT AS PROSE. The owner doesn't like reading: the app plays a \
+    fenced code block whose language is `deck` as animated slides (numbers count up, charts grow, \
+    points appear one by one). Format:
+
+    ```deck
+    {"title":"Channel check-up","slides":[
+      {"kind":"title","title":"Your channel is asleep","subtitle":"Great topic, no rhythm","icon":"moon.zzz"},
+      {"kind":"stats","title":"Last 28 days","stats":[{"label":"Views","value":4500,"delta":"-8%"},{"label":"Watch hours","value":729},{"label":"Subscribers","value":-5}]},
+      {"kind":"chart","title":"Top videos","chart":{"type":"bar","unit":"views","data":[{"label":"Lâcher prise","value":3356},{"label":"Philosophes","value":391}]},"caption":"One video makes 75 % of views"},
+      {"kind":"points","title":"Do this week","points":["Post 3 Shorts","Reuse the 'lâcher prise' hook","No hashtags in titles"]},
+      {"kind":"quote","text":"Consistency beats perfection.","caption":"Your next 30 days"}
+    ]}
+    ```
+
+    Rules: 4 to 8 slides, one idea per slide. At most 4 points per slide, each at most 10 words. \
+    Put numbers in "stats" as JSON numbers (they count up). Use a chart slide whenever numbers \
+    compare (chart type "bar", "line" or "donut"; at most 8 data points; labels under 25 characters). \
+    End with a "points" slide of concrete actions or a "quote" takeaway. "icon" is an SF Symbol name. \
+    The JSON must be valid: double quotes, no comments, no trailing commas. Outside the deck write at \
+    most one short sentence. Use the language the owner writes in.
+    Exception: when the owner asks for text to use (a script, titles, a description, hashtags), give \
+    that text plainly so it can be copied, with at most a 2-slide deck if it helps. Long reports go \
+    into a file in research/ — say where — while the chat shows the deck.
     """
 
     func stop() { run?.cancel() }

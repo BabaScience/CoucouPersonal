@@ -247,6 +247,16 @@ final class HubGlassWindow: NSWindow {
     static let radius: CGFloat = 24
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    /// ⌘W hides the panel, like closing a window (no title bar to hold the standard menu item).
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+           event.charactersIgnoringModifiers == "w" {
+            orderOut(nil)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
 }
 
 /// A small round close button (the window has no traffic lights).
@@ -262,7 +272,7 @@ struct HubCloseButton: View {
                 .background(Circle().fill(Color.white.opacity(hover ? 0.18 : 0.08)))
         }
         .buttonStyle(.plain)
-        .help("Hide Coucou (⌃⌥C)")
+        .help("Close (⌘W) — ⌃⌥C or the Dock icon brings it back")
         .onHover { hover = $0 }
     }
 }
@@ -345,7 +355,7 @@ private struct HubSidebar: View {
                 Text(verbatim: "Coucou")
                     .font(.system(size: 18, weight: .bold))
                 Spacer(minLength: 0)
-                HubCloseButton { FlowHubController.shared.toggle() }
+                HubCloseButton { FlowHubController.shared.hide() }
             }
             .padding(.horizontal, 8)
             .padding(.top, 20)

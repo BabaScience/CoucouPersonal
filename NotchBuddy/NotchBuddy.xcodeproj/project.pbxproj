@@ -122,6 +122,7 @@
 		BBCA973A1AE1385BBE79A834 /* VoiceWakeFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABD7A2C29B15EFFAF67FF2DE /* VoiceWakeFilter.swift */; };
 		BDD8A210DD6D9DA2D15BC5EE /* PillCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C64C4C5D705CE486221B74 /* PillCatalog.swift */; };
 		BDEFF4223DA949E2B8AB85A7 /* VoiceEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B328028D18F590D6680B8A2B /* VoiceEngine.swift */; };
+		BE7066BD117E44A73E4E751F /* StudioDeck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FAFA7A414691A7B5F4A5984 /* StudioDeck.swift */; };
 		BEC5DDB55B3DA67C61CA8470 /* DesktopMochi.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1DDC96E7967032F5D0BD585 /* DesktopMochi.swift */; };
 		C07E9A04E827284FDF33DB16 /* ShortcutLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA51E5B140C20812641168EA /* ShortcutLogic.swift */; };
 		C2212AA8BF5834B62308235B /* WakePhrase.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12EC8F605BBC37F8223D7AA /* WakePhrase.swift */; };
@@ -226,6 +227,7 @@
 		7C1A7D5CBE2AC084A10C5FF3 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		7C432FE1286945E42D3E11D7 /* VoiceResultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceResultView.swift; sourceTree = "<group>"; };
 		7C8178EB447DDE9C03427B36 /* ParakeetEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParakeetEngine.swift; sourceTree = "<group>"; };
+		7FAFA7A414691A7B5F4A5984 /* StudioDeck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudioDeck.swift; sourceTree = "<group>"; };
 		8436291D94C826F1D9DA3130 /* FlowSettingsBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowSettingsBox.swift; sourceTree = "<group>"; };
 		84ECC59BE7CDDEE348FC7096 /* ServiceSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceSnapshot.swift; sourceTree = "<group>"; };
 		8790ACE9F73BD74640A0F20C /* LocalChat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalChat.swift; sourceTree = "<group>"; };
@@ -404,6 +406,7 @@
 				1BE21C2B315D37AA70ED45E9 /* SoundEngine.swift */,
 				6A9E6EB7C8468A8339CF6A5C /* SpotifyController.swift */,
 				914A792788D403F836BEB570 /* SpotifyViews.swift */,
+				7FAFA7A414691A7B5F4A5984 /* StudioDeck.swift */,
 				87AF6F7A027AB1D46309DD49 /* TerminalTarget.swift */,
 				244A7909EEDA4BFF4C2EA9B5 /* TerminalTarget+AppKit.swift */,
 				B241B043223AFBBFB7418A5E /* UploadCanvasView.swift */,
@@ -728,6 +731,7 @@
 				E2414533EDC7565286141198 /* SpotifyController.swift in Sources */,
 				4B99E2AD54926078AB087B43 /* SpotifyViews.swift in Sources */,
 				6BB32D6B5E627555994DC3CB /* SpotterGeneration.swift in Sources */,
+				BE7066BD117E44A73E4E751F /* StudioDeck.swift in Sources */,
 				9EA178EA395B116336C1FA10 /* TerminalTarget+AppKit.swift in Sources */,
 				1D4CE0CCD2B5A0FFE50C7F06 /* TerminalTarget.swift in Sources */,
 				8551E592C5FFC6A0A7458A26 /* TurnEndPolicy.swift in Sources */,

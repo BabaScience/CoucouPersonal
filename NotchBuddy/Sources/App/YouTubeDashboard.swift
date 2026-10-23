@@ -508,12 +508,12 @@ private let studioActions: [StudioAction] = [
     StudioAction(title: "Understand my channel", symbol: "sparkle.magnifyingglass", prompt: """
         Analyse my channel. Read analytics.md (and channel.md), look at my channel page and a few of my recent videos \
         on the web. Tell me: who my audience is, my content pillars, which videos perform best and why (hooks, topics, \
-        length, format, retention), and the 5 most impactful things I should change. Use charts. Then update the \
+        length, format, retention), and the 5 most impactful things I should change. Then update the \
         "Channel profile" and "What performs" sections of CLAUDE.md.
         """),
     StudioAction(title: "Weekly report", symbol: "chart.bar.xaxis", prompt: """
         Give me my report for the period in analytics.md: what went up or down and why, best and worst videos, \
-        where views came from, and 3 actions for next week. Use charts.
+        where views came from, and 3 actions for next week.
         """),
     StudioAction(title: "Market research", symbol: "chart.line.uptrend.xyaxis", prompt: """
         Do market research for my niche (French inspirational / motivational Shorts). Use web search. Find the leading \
@@ -546,7 +546,12 @@ private struct StudioChat: View {
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
-                        ForEach(studio.messages) { m in StudioMessageRow(message: m).id(m.id) }
+                        ForEach(chatItems) { item in
+                            switch item.kind {
+                            case .message(let m): StudioMessageRow(message: m).id(m.id)
+                            case .steps(let steps): StudioStepsRow(steps: steps)
+                            }
+                        }
                         if studio.running {
                             HStack(spacing: 8) {
                                 ProgressView().controlSize(.small)
@@ -605,6 +610,57 @@ private struct StudioChat: View {
         draft = ""
         studio.send(text)
     }
+
+    /// Messages, with each run of tool steps folded into one line.
+    private var chatItems: [StudioChatItem] {
+        var items: [StudioChatItem] = []
+        for m in studio.messages {
+            if m.role == .activity {
+                if case .steps(let s) = items.last?.kind {
+                    items[items.count - 1] = StudioChatItem(id: items[items.count - 1].id, kind: .steps(s + [m]))
+                } else {
+                    items.append(StudioChatItem(id: m.id, kind: .steps([m])))
+                }
+            } else {
+                items.append(StudioChatItem(id: m.id, kind: .message(m)))
+            }
+        }
+        return items
+    }
+}
+
+struct StudioChatItem: Identifiable {
+    enum Kind { case message(StudioMessage), steps([StudioMessage]) }
+    let id: UUID
+    let kind: Kind
+}
+
+/// "⚙︎ 7 steps": what Claude looked at, folded; a click shows the list.
+private struct StudioStepsRow: View {
+    let steps: [StudioMessage]
+    @State private var open = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button { withAnimation(.easeOut(duration: 0.2)) { open.toggle() } } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: open ? "chevron.down" : "chevron.right").font(.system(size: 9, weight: .bold))
+                    Image(systemName: "gearshape.2")
+                    Text(steps.count == 1 ? steps[0].text : "\(steps.count) steps · \(steps.last?.text ?? "")")
+                        .lineLimit(1)
+                }
+                .font(.system(size: 11.5))
+                .foregroundColor(HubTheme.muted)
+            }
+            .buttonStyle(.plain)
+            if open {
+                ForEach(steps) { s in
+                    Text(s.text).font(.system(size: 11)).foregroundColor(HubTheme.muted).lineLimit(1)
+                        .padding(.leading, 30)
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Messages with charts
@@ -632,6 +688,7 @@ struct StudioMessageRow: View {
                         switch part {
                         case .text(let t): ChatMarkdownView(markdown: t)
                         case .chart(let spec): StudioChartView(spec: spec)
+                        case .deck(let deck): StudioDeckView(deck: deck)
                         }
                     }
                 }
@@ -660,19 +717,24 @@ struct StudioChartSpec: Decodable, Equatable {
     let unit: String?
     let data: [Point]
 
-    enum Part { case text(String), chart(StudioChartSpec) }
+    enum Part { case text(String), chart(StudioChartSpec), deck(StudioDeck) }
 
-    /// Splits a message into Markdown and chart blocks (a broken block stays as text).
+    /// Splits a message into Markdown, chart and deck blocks (a broken block stays as text).
     static func split(_ text: String) -> [Part] {
         var parts: [Part] = []
         var rest = Substring(text)
-        while let open = rest.range(of: "```chart") {
+        while true {
+            let opens = ["```deck", "```chart"].compactMap { tag in rest.range(of: tag).map { (tag, $0) } }
+            guard let (tag, open) = opens.min(by: { $0.1.lowerBound < $1.1.lowerBound }) else { break }
             let before = String(rest[..<open.lowerBound])
             let afterOpen = rest[open.upperBound...]
             guard let close = afterOpen.range(of: "```") else { break }
             let json = String(afterOpen[..<close.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
             if !before.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { parts.append(.text(before)) }
-            if let spec = try? JSONDecoder().decode(StudioChartSpec.self, from: Data(json.utf8)), !spec.data.isEmpty {
+            let data = Data(json.utf8)
+            if tag == "```deck", let deck = try? JSONDecoder().decode(StudioDeck.self, from: data), !deck.slides.isEmpty {
+                parts.append(.deck(deck))
+            } else if tag == "```chart", let spec = try? JSONDecoder().decode(StudioChartSpec.self, from: data), !spec.data.isEmpty {
                 parts.append(.chart(spec))
             } else {
                 parts.append(.text("```\n\(json)\n```"))
@@ -686,12 +748,24 @@ struct StudioChartSpec: Decodable, Equatable {
 
 struct StudioChartView: View {
     let spec: StudioChartSpec
+    /// Inside a deck slide: no card of its own.
+    var bare = false
     @State private var progress: Double = 0
 
     var body: some View {
+        Group {
+            if bare {
+                VStack(alignment: .leading, spacing: 10) { content }
+            } else {
+                StudioGlassCard { content }
+            }
+        }
+        .onAppear { withAnimation(.spring(response: 1, dampingFraction: 0.85).delay(bare ? 0.25 : 0)) { progress = 1 } }
+    }
+
+    @ViewBuilder private var content: some View {
         let points = Array(spec.data.prefix(12).enumerated())
         let maxV = max(1, spec.data.map(\.value).max() ?? 1)
-        StudioGlassCard {
             if let title = spec.title { Text(title).font(.system(size: 12.5, weight: .semibold)) }
             switch spec.type {
             case "line":
@@ -705,7 +779,7 @@ struct StudioChartView: View {
                         .foregroundStyle(StudioPalette.red).symbolSize(18)
                 }
                 .chartYScale(domain: 0...maxV * 1.1)
-                .frame(height: 170)
+                .frame(height: bare ? 150 : 170)
             case "donut", "pie":
                 HStack(spacing: 14) {
                     Chart(points, id: \.offset) { i, p in
@@ -736,10 +810,8 @@ struct StudioChartView: View {
                 }
                 .chartXAxis(.hidden)
                 .chartXScale(domain: 0...maxV * 1.3)
-                .frame(height: CGFloat(points.count) * 38 + 10)
+                .frame(height: bare ? min(170, CGFloat(points.count) * 30 + 10) : CGFloat(points.count) * 38 + 10)
             }
-        }
-        .onAppear { withAnimation(.spring(response: 1, dampingFraction: 0.85)) { progress = 1 } }
     }
 }
 #endif
