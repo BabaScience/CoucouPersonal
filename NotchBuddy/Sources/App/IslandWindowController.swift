@@ -725,6 +725,11 @@ final class IslandWindowController: NSWindowController {
             appendAppLog("nb.log", "[Capture] shortcut pressed")
             ScreenCapture.shared.begin()
             #endif
+
+        case .screenAssistant:
+            #if !APPSTORE
+            ScreenAgent.shared.toggleHUD()
+            #endif
         }
     }
 

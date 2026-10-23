@@ -233,6 +233,12 @@ struct HubHeroTheme {
             HubMochiSpec(color: color, size: size, outfit: outfit, state: state, roams: roams, start: start)
         }
         switch page {
+        case .youtube:
+            return .init(color: Color(hex: "#FF3B30"), cast: [m("#FF3B30", 60, 0.2, outfit: .sunglasses), m("#F5F6F8", 48, 0.7, state: .working)])
+        case .screen:
+            return .init(color: Color(hex: "#22D3EE"), cast: [m("#22D3EE", 58, 0.25, outfit: .roundGlasses), m("#F5F6F8", 46, 0.8)])
+        case .claude:
+            return .init(color: Color(hex: "#E07950"), cast: [m("#E07950", 58, 0.3, state: .thinking, roams: false), m("#F5F6F8", 46, 0.85)])
         case .dictation:
             return .init(color: Color(hex: "#FB923C"), cast: [m("#F5F6F8", 66, 0.2), m("#FB923C", 52, 0.65), m("#F472B6", 44, 0.95, outfit: .bow)])
         case .notes:

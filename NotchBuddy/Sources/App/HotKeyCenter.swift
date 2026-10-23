@@ -81,7 +81,10 @@ final class HotKeyCenter {
 
     /// Unregister every hot key. Called on app quit.
     func unregisterAll() {
-        for (action, ref) in refs {
+        // Over the keys, not (action, ref) pairs: Xcode 16.1's compiler yields a bogus pair
+        // from an empty dictionary of this type.
+        for action in Array(refs.keys) {
+            guard let ref = refs[action] else { continue }
             UnregisterEventHotKey(ref)
             let idx = UInt32(ShortcutAction.allCases.firstIndex(of: action)!)
             gHotKeyTable.removeValue(forKey: idx)

@@ -5,11 +5,14 @@ import SwiftUI
 
 /// The pages of the Coucou window: Flow (the dictation, the Notetaker) and the notch's settings.
 enum HubPage: String, CaseIterable, Identifiable {
+    case youtube, screen, claude
     case dictation, notes, insights, dictionary, snippets, styles, settings
     case general, pills, agents, chat, integrations, voice, shortcuts
 
     var id: String { rawValue }
 
+    /// This personal build's own pages, first in the sidebar.
+    static let minePages: [HubPage] = [.youtube, .screen, .claude]
     static let flowPages: [HubPage] = [.dictation, .notes, .insights, .dictionary, .snippets, .styles, .settings]
     static let notchPages: [HubPage] = [.general, .pills, .agents, .chat, .integrations, .voice, .shortcuts]
 
@@ -34,6 +37,9 @@ enum HubPage: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .youtube:      return "YouTube"
+        case .screen:       return "Screen"
+        case .claude:       return "Claude"
         case .general:      return String(localized: "General")
         case .pills:        return String(localized: "Active pills")
         case .agents:       return String(localized: "Agents")
@@ -53,6 +59,9 @@ enum HubPage: String, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
+        case .youtube:    return "play.rectangle"
+        case .screen:     return "cursorarrow.rays"
+        case .claude:     return "sparkles"
         case .dictation:  return "mic"
         case .notes:      return "record.circle"
         case .insights:   return "chart.bar"
@@ -125,7 +134,7 @@ extension HubPage {
 
 @MainActor
 final class HubRouter: ObservableObject {
-    @Published var page: HubPage = .dictation
+    @Published var page: HubPage = .youtube
 }
 
 /// Opens the Coucou Flow window: the history of the dictations, the Notetaker, the numbers, the
@@ -136,6 +145,9 @@ final class FlowHubController {
     let router = HubRouter()
     let windowState = HubWindowState()
     private var window: NSWindow?
+
+    /// Steps aside (the screen assistant needs to see what's behind).
+    func hide() { window?.orderOut(nil) }
 
     static let showInDockKey = "coucouShowInDock"
     static let openAtLaunchKey = "coucouOpenAtLaunch"
@@ -224,6 +236,9 @@ struct FlowHubView: View {
 
     @ViewBuilder private var page: some View {
         switch router.page {
+        case .youtube:    HubYouTubePage()
+        case .screen:     HubScreenPage()
+        case .claude:     HubClaudePage()
         case .dictation:  HubHomePage(router: router)
         case .notes:      HubNotesPage()
         case .insights:   HubInsightsPage()
@@ -268,7 +283,12 @@ private struct HubSidebar: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
+                    HubSidebarHeader(text: "Mine")
+                    ForEach(HubPage.minePages) { page in
+                        HubSidebarItem(page: page, selected: router.page == page) { router.page = page }
+                    }
                     HubSidebarHeader(text: "Flow")
+                        .padding(.top, 14)
                     ForEach(HubPage.flowPages) { page in
                         HubSidebarItem(page: page, selected: router.page == page) { router.page = page }
                     }

@@ -142,7 +142,7 @@ targets:
       properties:
         CFBundleName: Coucou
         CFBundleDisplayName: Coucou
-        CFBundleIdentifier: fr.louisraille.NotchBuddy
+        CFBundleIdentifier: com.greatbamba.coucou
         CFBundleVersion: "20"
         CFBundleShortVersionString: "0.5.3"
         CFBundlePackageType: APPL
@@ -175,7 +175,9 @@ targets:
           - zh-Hant
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: fr.louisraille.NotchBuddy
+        # Personal build: its own identity, so it never touches the official Coucou's
+        # Keychain items, preferences or permissions.
+        PRODUCT_BUNDLE_IDENTIFIER: com.greatbamba.coucou
         PRODUCT_NAME: Coucou
         INFOPLIST_FILE: Resources/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

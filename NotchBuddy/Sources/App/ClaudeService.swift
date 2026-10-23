@@ -4,7 +4,7 @@ import Security
 // MARK: - Keychain helpers
 
 enum Keychain {
-    static let service = "fr.louisraille.NotchBuddy"
+    static let service = "com.greatbamba.coucou"
 
     static func save(key: String, value: String) {
         guard let data = value.data(using: .utf8) else { return }

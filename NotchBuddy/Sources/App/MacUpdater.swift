@@ -111,6 +111,8 @@ final class MacUpdater: ObservableObject {
 
     /// At launch: a first look 30 s in, then every hour (a GitHub call only every 6 h).
     func start() {
+        // Personal build: never replace it with the official release.
+        return
         DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in self?.tick(launch: true) }
         timer?.invalidate()
         let t = Timer(timeInterval: 3600, repeats: true) { _ in
@@ -166,6 +168,8 @@ final class MacUpdater: ObservableObject {
     // MARK: - Check
 
     func check(manual: Bool) async {
+        // Personal build: updates come from this repository, not the official releases.
+        return
         guard !busy, lastCheck != .checking else { return }
         lastCheck = .checking
         var req = URLRequest(url: MacUpdate.releasesURL)

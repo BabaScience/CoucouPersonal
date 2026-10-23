@@ -20,6 +20,7 @@ enum ShortcutAction: String, CaseIterable, Sendable {
     case wardrobeToggle    = "wardrobeToggle"     // ⌃⌥G — open / close wardrobe
     case talkToCoucou      = "talkToCoucou"       // (unset) — start listening without wake phrase (non-AppStore)
     case captureScreen     = "captureScreen"      // ⌘⇧S — capture a part of the screen for Claude (non-AppStore)
+    case screenAssistant   = "screenAssistant"    // ⌃⌥S — screen assistant: guide me / do it (non-AppStore)
 
     // MARK: UserDefaults keys
 
@@ -52,12 +53,13 @@ enum ShortcutAction: String, CaseIterable, Sendable {
         case .wardrobeToggle:    return String(localized: "shortcut.wardrobe")
         case .talkToCoucou:      return String(localized: "shortcut.talk-to-coucou")
         case .captureScreen:     return String(localized: "shortcut.capture")
+        case .screenAssistant:   return "Screen assistant"
         }
     }
 
     /// Whether this action should be omitted from App Store builds.
     var isAppStoreOnly: Bool { false }
-    var isNonAppStore: Bool  { self == .attachFrontWindow || self == .talkToCoucou || self == .captureScreen }
+    var isNonAppStore: Bool  { self == .attachFrontWindow || self == .talkToCoucou || self == .captureScreen || self == .screenAssistant }
 
     /// Whether the shortcut is enabled by default.
     /// `toggleIsland` and `talkToCoucou` are off by default; all others are on.
@@ -110,6 +112,7 @@ enum ShortcutLogic {
         .wardrobeToggle:    ShortcutSpec(keyCode: 5,  nsFlags: ShortcutSpec.ctrlOpt),  // ⌃⌥G
         .talkToCoucou:      ShortcutSpec(keyCode: 9,  nsFlags: ShortcutSpec.ctrlOpt),  // ⌃⌥V (disabled by default)
         .captureScreen:     ShortcutSpec(keyCode: 1,  nsFlags: ShortcutSpec.cmdShift), // ⌘⇧S
+        .screenAssistant:   ShortcutSpec(keyCode: 1,  nsFlags: ShortcutSpec.ctrlOpt),  // ⌃⌥S
     ]
 
     // MARK: - Load / save (UserDefaults)
