@@ -102,8 +102,13 @@ enum YouTubeAPI {
             }
             page = json["nextPageToken"] as? String
         } while page != nil && ids.count < limit
+        return try await stats(ids: Array(ids.prefix(limit))).sorted { $0.published > $1.published }
+    }
+
+    /// Statistics for any videos of the channel, 50 per request.
+    static func stats(ids: [String]) async throws -> [YTVideoStat] {
         var out: [YTVideoStat] = []
-        for batch in stride(from: 0, to: min(ids.count, limit), by: 50).map({ Array(ids[$0..<min($0 + 50, ids.count, limit)]) }) {
+        for batch in stride(from: 0, to: ids.count, by: 50).map({ Array(ids[$0..<min($0 + 50, ids.count)]) }) {
             let json = try await get("https://www.googleapis.com/youtube/v3/videos",
                                      ["part": "snippet,statistics,contentDetails", "id": batch.joined(separator: ",")])
             for item in json["items"] as? [[String: Any]] ?? [] {
@@ -120,7 +125,7 @@ enum YouTubeAPI {
                                        thumbnail: thumb(sn)))
             }
         }
-        return out.sorted { $0.published > $1.published }
+        return out
     }
 
     /// Channel analytics over the last `days` days (YouTube's numbers lag by about two days).
@@ -145,7 +150,7 @@ enum YouTubeAPI {
             .map { YTSlice(label: Locale.current.localizedString(forRegionCode: $0[0] as? String ?? "") ?? ($0[0] as? String ?? ""),
                            value: dbl($0[1])) } ?? []
         a.ageGender = (try? await report(start, end, metrics: "viewerPercentage", dimensions: "ageGroup,gender"))?
-            .map { YTSlice(label: "\(($0[0] as? String ?? "").replacingOccurrences(of: "age", with: "")) \(($0[1] as? String ?? "") == "female" ? "♀" : "♂")",
+            .map { YTSlice(label: "\(($0[0] as? String ?? "").replacingOccurrences(of: "age", with: "").replacingOccurrences(of: "-", with: "–")) · \(($0[1] as? String ?? "") == "female" ? "Women" : "Men")",
                            value: dbl($0[2])) } ?? []
         a.topVideos = (try? await report(start, end, metrics: "views,estimatedMinutesWatched,averageViewPercentage,subscribersGained",
                                          dimensions: "video", sort: "-views", max: 10))?
@@ -241,6 +246,11 @@ enum YouTubeAPI {
         case "NOTIFICATION": return "Notifications"
         case "HASHTAGS": return "Hashtags"
         case "END_SCREEN": return "End screens"
+        case "YT_OTHER_PAGE": return "Other YouTube pages"
+        case "YT_PLAYLIST_PAGE": return "Playlist pages"
+        case "SHORTS_CONTENT_LINKS": return "Links in Shorts"
+        case "ADVERTISING": return "Ads"
+        case "SOUND_PAGE": return "Sound pages"
         default: return s.replacingOccurrences(of: "_", with: " ").capitalized
         }
     }

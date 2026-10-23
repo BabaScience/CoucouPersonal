@@ -40,6 +40,12 @@ final class YouTubeStudio: ObservableObject {
     // From the YouTube APIs once signed in (YouTubeAuth).
     @Published private(set) var apiChannel: YTChannel?
     @Published private(set) var videoStats: [YTVideoStat] = []
+    /// Videos in the period's top list that aren't among the latest uploads.
+    @Published private(set) var olderVideos: [YTVideoStat] = []
+    /// Every known video's title, by ID.
+    var videoTitles: [String: String] {
+        Dictionary((videoStats + olderVideos).map { ($0.id, $0.title) }, uniquingKeysWith: { a, _ in a })
+    }
     @Published private(set) var analytics: YTAnalytics?
     @Published private(set) var loadingAPI = false
     @Published private(set) var apiError: String?
@@ -123,7 +129,14 @@ final class YouTubeStudio: ObservableObject {
             async let vids = YouTubeAPI.videos(playlist: channel.uploadsPlaylist)
             async let stats = YouTubeAPI.analytics(days: periodDays)
             videoStats = try await vids
-            analytics = try await stats
+            let a = try await stats
+            // Top videos of the period can be older than the uploads fetched: get their titles too.
+            let known = Set(videoStats.map(\.id))
+            let missing = a.topVideos.map(\.id).filter { !known.contains($0) }
+            if !missing.isEmpty, let extra = try? await YouTubeAPI.stats(ids: missing) {
+                olderVideos = extra
+            }
+            analytics = a
             ensureWorkspace()
             writeAnalyticsFile()
         } catch {
@@ -156,7 +169,7 @@ final class YouTubeStudio: ObservableObject {
             slices("Top countries (views)", a.countries, "")
             slices("Audience (age, gender — % of viewers)", a.ageGender, " %")
             if !a.topVideos.isEmpty {
-                let titles = Dictionary(videoStats.map { ($0.id, $0.title) }, uniquingKeysWith: { a, _ in a })
+                let titles = videoTitles
                 l += ["", "### Top videos in the period", "", "| Video | Views | Watch min | Avg % viewed | Subs + |", "|---|---:|---:|---:|---:|"]
                 l += a.topVideos.map { "| \((titles[$0.id] ?? $0.id).replacingOccurrences(of: "|", with: "/")) | \($0.views) | \($0.minutes) | \(String(format: "%.0f", $0.averageViewPercentage)) | \($0.subscribersGained) |" }
             }

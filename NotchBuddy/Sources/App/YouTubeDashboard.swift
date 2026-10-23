@@ -190,7 +190,7 @@ private struct YouTubeOverview: View {
     // Top videos
 
     private func topVideos(_ a: YTAnalytics) -> some View {
-        let titles = Dictionary(studio.videoStats.map { ($0.id, $0.title) }, uniquingKeysWith: { x, _ in x })
+        let titles = studio.videoTitles
         let rows = a.topVideos.prefix(6).map { (title: short(titles[$0.id] ?? $0.id), views: $0.views, pct: $0.averageViewPercentage) }
         return glass {
             Text("Top videos").font(.system(size: 13, weight: .semibold))
