@@ -19,6 +19,17 @@ struct StudioDeck: Decodable, Equatable {
         let text: String?
         let caption: String?
         let icon: String?
+        /// What the voice says on this slide (Claude writes it; built from the slide otherwise).
+        let narration: String?
+
+        var spokenText: String {
+            if let n = narration?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty { return n }
+            var parts = [title, subtitle, text].compactMap { $0 }
+            parts += (stats ?? []).map { s in "\(s.label) : \(s.number.map { Int($0.rounded()).formatted() } ?? s.display)" }
+            parts += points ?? []
+            if let caption { parts.append(caption) }
+            return parts.joined(separator: ". ")
+        }
     }
 
     /// A big number. `value` may be a number (it counts up) or text ("3×", "Top 5 %").
@@ -52,10 +63,16 @@ struct StudioDeck: Decodable, Equatable {
 /// one. Arrows, the dots or a click move between slides; ▶ plays it on its own.
 struct StudioDeckView: View {
     let deck: StudioDeck
+    @ObservedObject private var voice = InworldVoice.shared
+    @AppStorage("deck.voiceOn") private var voiceOn = true
     @State private var index = 0
     @State private var forward = true
     @State private var playing = false
     @State private var timer: Timer?
+    /// The narrated run (▶ with the voice on), or the reading of one slide.
+    @State private var narration: Task<Void, Never>?
+
+    private var narrated: Bool { voiceOn && voice.isConfigured }
 
     private var count: Int { deck.slides.count }
 
@@ -99,6 +116,13 @@ struct StudioDeckView: View {
                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: index)
                 controlButton("chevron.right") { go(index + 1) }.disabled(index == count - 1)
                 Spacer()
+                if voice.isConfigured {
+                    controlButton(voiceOn ? "speaker.wave.2.fill" : "speaker.slash.fill") {
+                        voiceOn.toggle()
+                        if !voiceOn { voice.stop() }
+                    }
+                    .help(voiceOn ? "Voice on (Inworld)" : "Voice off")
+                }
                 controlButton(playing ? "pause.fill" : "play.fill") { togglePlay() }
             }
             .padding(.horizontal, 16)
@@ -114,7 +138,7 @@ struct StudioDeckView: View {
             }
         )
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Color.white.opacity(0.14)))
-        .onDisappear { timer?.invalidate() }
+        .onDisappear { stopPlay() }
     }
 
     private func controlButton(_ symbol: String, action: @escaping () -> Void) -> some View {
@@ -127,30 +151,65 @@ struct StudioDeckView: View {
         .buttonStyle(.plain)
     }
 
-    private func go(_ i: Int) {
+    /// `user`: a click (reads the slide when the voice is on), not the narrated run moving on.
+    private func go(_ i: Int, user: Bool = true) {
         guard i >= 0, i < count, i != index else {
             if i >= count { stopPlay() }
             return
         }
         forward = i > index
         withAnimation(.spring(response: 0.55, dampingFraction: 0.86)) { index = i }
+        if user && narrated {
+            if playing { stopPlay() }
+            readCurrent()
+        }
     }
 
     private func togglePlay() {
         if playing { stopPlay(); return }
         playing = true
-        if index == count - 1 { go(0) }
-        timer = Timer.scheduledTimer(withTimeInterval: 4.5, repeats: true) { _ in
-            MainActor.assumeIsolated {
-                if index >= count - 1 { stopPlay() } else { go(index + 1) }
+        if index == count - 1 { go(0, user: false) }
+        if narrated {
+            narration?.cancel()
+            narration = Task { await narrate(from: index) }
+        } else {
+            timer = Timer.scheduledTimer(withTimeInterval: 4.5, repeats: true) { _ in
+                MainActor.assumeIsolated {
+                    if index >= count - 1 { stopPlay() } else { go(index + 1, user: false) }
+                }
             }
         }
+    }
+
+    /// Reads each slide, moving on when the voice finishes; the next one is prepared meanwhile.
+    private func narrate(from start: Int) async {
+        for i in start..<count {
+            if Task.isCancelled { return }
+            if i != index { go(i, user: false) }
+            if i + 1 < count {
+                let next = deck.slides[i + 1].spokenText
+                Task { _ = try? await voice.audio(for: next) }
+            }
+            await voice.speak(deck.slides[i].spokenText)
+            if Task.isCancelled || voice.error != nil { break }
+            try? await Task.sleep(nanoseconds: 600_000_000)
+        }
+        playing = false
+    }
+
+    private func readCurrent() {
+        narration?.cancel()
+        let text = deck.slides[index].spokenText
+        narration = Task { await voice.speak(text) }
     }
 
     private func stopPlay() {
         playing = false
         timer?.invalidate()
         timer = nil
+        narration?.cancel()
+        narration = nil
+        voice.stop()
     }
 }
 

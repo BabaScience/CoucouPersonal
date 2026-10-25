@@ -596,6 +596,8 @@ struct HubClaudePage: View {
                 HubDivider()
                 HubRow(title: "Screen assistant", detail: "Sonnet is the best balance of speed and accuracy.") { modelPicker($screenModel) }
             }
+            HubLabel("Voice")
+            InworldVoiceCard()
         }
     }
 

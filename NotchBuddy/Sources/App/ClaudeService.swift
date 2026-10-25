@@ -69,6 +69,8 @@ final class KeychainStore: @unchecked Sendable {
         "claude_oauth_token",
         // YouTube: the user's own Google OAuth client and the refresh token (YouTubeAuth)
         "youtube_oauth_client_id", "youtube_oauth_client_secret", "youtube_refresh_token",
+        // Inworld text-to-speech: the deck's narration (InworldVoice)
+        "inworld_api_key",
         "google-api-key",
         "openai-api-key",
         "deepseek-api-key",

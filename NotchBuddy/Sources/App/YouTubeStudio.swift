@@ -331,10 +331,10 @@ final class YouTubeStudio: ObservableObject {
 
     ```deck
     {"title":"Channel check-up","slides":[
-      {"kind":"title","title":"Your channel is asleep","subtitle":"Great topic, no rhythm","icon":"moon.zzz"},
+      {"kind":"title","title":"Your channel is asleep","subtitle":"Great topic, no rhythm","icon":"moon.zzz","narration":"Good news and bad news: your topic works, but the channel has gone quiet."},
       {"kind":"stats","title":"Last 28 days","stats":[{"label":"Views","value":4500,"delta":"-8%"},{"label":"Watch hours","value":729},{"label":"Subscribers","value":-5}]},
       {"kind":"chart","title":"Top videos","chart":{"type":"bar","unit":"views","data":[{"label":"Lâcher prise","value":3356},{"label":"Philosophes","value":391}]},"caption":"One video makes 75 % of views"},
-      {"kind":"points","title":"Do this week","points":["Post 3 Shorts","Reuse the 'lâcher prise' hook","No hashtags in titles"]},
+      {"kind":"points","title":"Do this week","points":["Post 3 Shorts","Reuse the 'lâcher prise' hook","No hashtags in titles"],"narration":"This week, three Shorts. Start with the hook that already worked, and keep the hashtags out of the titles."},
       {"kind":"quote","text":"Consistency beats perfection.","caption":"Your next 30 days"}
     ]}
     ```
@@ -343,6 +343,9 @@ final class YouTubeStudio: ObservableObject {
     Put numbers in "stats" as JSON numbers (they count up). Use a chart slide whenever numbers \
     compare (chart type "bar", "line" or "donut"; at most 8 data points; labels under 25 characters). \
     End with a "points" slide of concrete actions or a "quote" takeaway. "icon" is an SF Symbol name. \
+    Give every slide a "narration": what a presenter says while it shows — one or two natural spoken \
+    sentences (at most 35 words), in the owner's language, telling the story behind the slide rather \
+    than reading it (round the numbers, no symbols or emojis). A voice reads it aloud. \
     The JSON must be valid: double quotes, no comments, no trailing commas. Outside the deck write at \
     most one short sentence. Use the language the owner writes in.
     Exception: when the owner asks for text to use (a script, titles, a description, hashtags), give \
