@@ -157,6 +157,7 @@
 		EF584BA65AA62FCABD6FB6B2 /* FlowKeyLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4983B1317913482E61EB344D /* FlowKeyLogic.swift */; };
 		F032CA1CBF8253D9E3981A90 /* NoteAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E5A3ADB1304C23C4AEDD48 /* NoteAudio.swift */; };
 		F06EE0A97CB77096A337AA8B /* sounds in Resources */ = {isa = PBXBuildFile; fileRef = C066E2B991AA4F56B2724263 /* sounds */; };
+		F32736206A890578A3B7CDB6 /* StudioConversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B016AA9B2BE21BD17BFF508 /* StudioConversation.swift */; };
 		F8F95EAD88F70E0A147D1662 /* MacDictation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6544ED02D945CF9F00647AD1 /* MacDictation.swift */; };
 		FAD78D74C6906D4EC8AA4101 /* UploadSequenceEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FD65943C32E150F1CD65C31 /* UploadSequenceEngine.swift */; };
 		FD4B5673A5427128DE1910F3 /* DictationTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56A2317343D062ACCAF4E5BD /* DictationTranscript.swift */; };
@@ -238,6 +239,7 @@
 		87AF6F7A027AB1D46309DD49 /* TerminalTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalTarget.swift; sourceTree = "<group>"; };
 		888B3E1420BCB6292BDC8117 /* WeeklyRecapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyRecapView.swift; sourceTree = "<group>"; };
 		8ACB4350729C6513824D1ADF /* ColorHex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorHex.swift; sourceTree = "<group>"; };
+		8B016AA9B2BE21BD17BFF508 /* StudioConversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudioConversation.swift; sourceTree = "<group>"; };
 		8BF22817EC70748F2D1FB2E7 /* ClaudePlanGauge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudePlanGauge.swift; sourceTree = "<group>"; };
 		8F2F18663F42A246DACCD639 /* MailController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailController.swift; sourceTree = "<group>"; };
 		910EF7E09C61D26658D36D83 /* YouTubeAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeAPI.swift; sourceTree = "<group>"; };
@@ -413,6 +415,7 @@
 				1BE21C2B315D37AA70ED45E9 /* SoundEngine.swift */,
 				6A9E6EB7C8468A8339CF6A5C /* SpotifyController.swift */,
 				914A792788D403F836BEB570 /* SpotifyViews.swift */,
+				8B016AA9B2BE21BD17BFF508 /* StudioConversation.swift */,
 				7FAFA7A414691A7B5F4A5984 /* StudioDeck.swift */,
 				4CB418CA89B136D759346413 /* StudioRenders.swift */,
 				87AF6F7A027AB1D46309DD49 /* TerminalTarget.swift */,
@@ -741,6 +744,7 @@
 				E2414533EDC7565286141198 /* SpotifyController.swift in Sources */,
 				4B99E2AD54926078AB087B43 /* SpotifyViews.swift in Sources */,
 				6BB32D6B5E627555994DC3CB /* SpotterGeneration.swift in Sources */,
+				F32736206A890578A3B7CDB6 /* StudioConversation.swift in Sources */,
 				BE7066BD117E44A73E4E751F /* StudioDeck.swift in Sources */,
 				57FB023CE81AE1F714A93531 /* StudioRenders.swift in Sources */,
 				9EA178EA395B116336C1FA10 /* TerminalTarget+AppKit.swift in Sources */,

@@ -303,7 +303,11 @@ final class YouTubeStudio: ObservableObject {
 
     // MARK: Conversation
 
-    func send(_ prompt: String) {
+    /// Conversation mode listens to the run as it goes (steps, Mochi's lines, the answer).
+    var eventObserver: ((ClaudeCLI.Event) -> Void)?
+
+    /// `voice`: the owner spoke (Conversation mode) — Claude answers with a spoken line first.
+    func send(_ prompt: String, voice: Bool = false) {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !running else { return }
         ensureWorkspace()
@@ -312,10 +316,11 @@ final class YouTubeStudio: ObservableObject {
         running = true
         let model = UserDefaults.standard.string(forKey: ClaudeCLI.modelKey)
         run = ClaudeCLI.run(
-            prompt: text,
+            // Spoken requests carry a reminder: in a long session Claude keeps its deck-only habit.
+            prompt: voice ? text + "\n\n(Voice mode: begin your answer with the ```say block.)" : text,
             cwd: workspace,
             sessionId: sessionId,
-            systemPrompt: Self.chatSystemPrompt,
+            systemPrompt: voice ? Self.chatSystemPrompt + Self.voicePrompt : Self.chatSystemPrompt,
             allowedTools: studioTools,
             permissionMode: "acceptEdits",
             model: model,
@@ -328,6 +333,7 @@ final class YouTubeStudio: ObservableObject {
     }
 
     private func handle(_ event: ClaudeCLI.Event) {
+        eventObserver?(event)
         switch event {
         case .session(let id):
             sessionId = id
@@ -424,6 +430,18 @@ final class YouTubeStudio: ObservableObject {
     Exception: when the owner asks for text to use (a script, titles, a description, hashtags), give \
     that text plainly so it can be copied, with at most a 2-slide deck if it helps. Long reports go \
     into a file in research/ — say where — while the chat shows the deck.
+    """
+
+    /// Conversation mode: the owner talks and listens; Mochi, the app's character, says the answer.
+    private static let voicePrompt = """
+
+    VOICE MODE — the owner is TALKING to you and LISTENING: Coucou's character (Mochi) says your words \
+    out loud with a voice. ALWAYS start your final answer with a fenced code block whose language is \
+    `say` — also when the answer is a deck: what you say out loud, 1 to 3 short natural sentences in \
+    the owner's language that give the gist, no markdown, no lists, round numbers. Then, only if \
+    useful, the deck (with narration) or other blocks. Before work \
+    that takes more than a few seconds, first write one short line (at most 12 words) saying what you \
+    are about to do — it is spoken too. Never read file paths or code aloud.
     """
 
     func stop() { run?.cancel() }

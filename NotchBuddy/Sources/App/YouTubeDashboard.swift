@@ -17,6 +17,7 @@ struct HubYouTubePage: View {
     @ObservedObject private var studio = YouTubeStudio.shared
     @ObservedObject private var auth = YouTubeAuth.shared
     @AppStorage("youtube.tab") private var tab = "overview"
+    @AppStorage("studio.mode") private var mode = "chat"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -27,6 +28,8 @@ struct HubYouTubePage: View {
             Group {
                 if tab == "overview" {
                     YouTubeOverview()
+                } else if mode == "conversation" {
+                    ConversationStage()
                 } else {
                     StudioChat()
                 }
@@ -61,6 +64,13 @@ struct HubYouTubePage: View {
                 Text("Studio").tag("studio")
             }
             .pickerStyle(.segmented).labelsHidden().frame(width: 170)
+            if tab == "studio" {
+                Picker("", selection: $mode) {
+                    Text("Chat").tag("chat")
+                    Text("Conversation").tag("conversation")
+                }
+                .pickerStyle(.segmented).labelsHidden().frame(width: 190)
+            }
             if tab == "overview" && auth.signedIn {
                 Picker("", selection: $studio.periodDays) {
                     Text("7 d").tag(7)
@@ -695,6 +705,11 @@ struct StudioMessageRow: View {
                         case .chart(let spec): StudioChartView(spec: spec)
                         case .deck(let deck): StudioDeckView(deck: deck)
                         case .video(let path, let title): StudioVideoView(path: path, title: title)
+                        case .say(let line):
+                            Label(line, systemImage: "speaker.wave.2.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(HubTheme.text)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
@@ -717,20 +732,33 @@ struct StudioMessageRow: View {
 
 /// A chart Claude asks for in a ```chart block.
 struct StudioChartSpec: Decodable, Equatable {
-    struct Point: Decodable, Equatable { let label: String; let value: Double }
+    struct Point: Decodable, Equatable {
+        let label: String
+        let value: Double
+
+        enum CodingKeys: String, CodingKey { case label, value }
+
+        /// Lenient: a missing or null value (a day with no data yet) counts as 0 instead of
+        /// breaking the whole chart, and the deck around it.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            label = (try? c.decode(String.self, forKey: .label)) ?? ""
+            value = (try? c.decode(Double.self, forKey: .value)) ?? 0
+        }
+    }
     let type: String
     let title: String?
     let unit: String?
     let data: [Point]
 
-    enum Part { case text(String), chart(StudioChartSpec), deck(StudioDeck), video(path: String, title: String?) }
+    enum Part { case text(String), chart(StudioChartSpec), deck(StudioDeck), video(path: String, title: String?), say(String) }
 
     /// Splits a message into Markdown, chart and deck blocks (a broken block stays as text).
     static func split(_ text: String) -> [Part] {
         var parts: [Part] = []
         var rest = Substring(text)
         while true {
-            let opens = ["```deck", "```chart", "```video"].compactMap { tag in rest.range(of: tag).map { (tag, $0) } }
+            let opens = ["```deck", "```chart", "```video", "```say"].compactMap { tag in rest.range(of: tag).map { (tag, $0) } }
             guard let (tag, open) = opens.min(by: { $0.1.lowerBound < $1.1.lowerBound }) else { break }
             let before = String(rest[..<open.lowerBound])
             let afterOpen = rest[open.upperBound...]
@@ -738,7 +766,9 @@ struct StudioChartSpec: Decodable, Equatable {
             let json = String(afterOpen[..<close.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
             if !before.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { parts.append(.text(before)) }
             let data = Data(json.utf8)
-            if tag == "```deck", let deck = try? JSONDecoder().decode(StudioDeck.self, from: data), !deck.slides.isEmpty {
+            if tag == "```say" {
+                parts.append(.say(json))
+            } else if tag == "```deck", let deck = try? JSONDecoder().decode(StudioDeck.self, from: data), !deck.slides.isEmpty {
                 parts.append(.deck(deck))
             } else if tag == "```video", let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                       let path = obj["path"] as? String {
