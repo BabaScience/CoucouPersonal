@@ -125,6 +125,24 @@ struct StudioRenderBar: View {
     }
 }
 
+/// AppKit's player view. SwiftUI's `VideoPlayer`, built with Xcode 16.1's SDK, aborts on macOS 26
+/// when its metadata loads (it crashed Coucou at launch with a video in the chat).
+struct StudioPlayerView: NSViewRepresentable {
+    let player: AVPlayer?
+
+    func makeNSView(context: Context) -> AVPlayerView {
+        let v = AVPlayerView()
+        v.controlsStyle = .floating
+        v.videoGravity = .resizeAspect
+        v.player = player
+        return v
+    }
+
+    func updateNSView(_ v: AVPlayerView, context: Context) {
+        if v.player !== player { v.player = player }
+    }
+}
+
 /// A video of the studio, playable in the chat.
 struct StudioVideoView: View {
     let path: String
@@ -140,7 +158,7 @@ struct StudioVideoView: View {
                     HubIconButton(symbol: "arrow.up.forward.square", help: "Open") { NSWorkspace.shared.open(url) }
                     HubIconButton(symbol: "folder", help: "Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                 }
-                VideoPlayer(player: player)
+                StudioPlayerView(player: player)
                     .aspectRatio(9.0 / 16.0, contentMode: .fit)
                     .frame(maxHeight: 420)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
