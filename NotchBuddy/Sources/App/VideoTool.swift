@@ -6,14 +6,89 @@ import Foundation
 /// captions, or Whisper on this Mac when there are none), `meta.txt` and `sheet.jpg` (12 screenshots
 /// in one image) plus the frames. Written into the studio folder; Claude runs it with Bash.
 enum VideoTool {
+    /// Writes the studio's tools (`coucou-video`, `coucou-render`); returns their folder.
+    @discardableResult
     static func install(in studio: URL) -> URL {
         let bin = studio.appendingPathComponent(".coucou/bin", isDirectory: true)
         try? FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
-        let tool = bin.appendingPathComponent("coucou-video")
-        try? script.write(to: tool, atomically: true, encoding: .utf8)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
-        return tool
+        for (name, text) in [("coucou-video", script), ("coucou-render", renderScript)] {
+            let tool = bin.appendingPathComponent(name)
+            try? text.write(to: tool, atomically: true, encoding: .utf8)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+        }
+        return bin
     }
+
+    /// The private Python of the Shorts engine (numpy, Pillow, Playwright, faster-whisper).
+    static var python: String {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("CoucouStudio/.venv-shorts/bin/python").path
+    }
+
+    /// `coucou-render <episode folder> [engine options]`: runs the episode's engine in the background
+    /// (a full video takes 10–18 min) and records it in .coucou/renders/, which Coucou watches to show
+    /// the progress and then the video. `--stills …` runs at once (a contact sheet, seconds).
+    /// `coucou-render stop <episode folder>` stops it.
+    private static let renderScript = #"""
+    #!/bin/zsh
+    export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+    studio="$(cd "$(dirname "$0")/../.." && pwd)"
+    py="$HOME/CoucouStudio/.venv-shorts/bin/python"
+    [ -x "$py" ] || { echo "Error: the Shorts engine isn't installed (~/CoucouStudio/.venv-shorts)."; exit 1; }
+    mode=run
+    [ "$1" = "stop" ] && { mode=stop; shift; }
+    ep="$1"; shift
+    [ -z "$ep" ] && { echo "Usage: coucou-render <episode folder> [--start S --end E --out file.mp4 | --stills t1 t2 … | --audio-only]"; exit 2; }
+    [ -d "$studio/$ep" ] && ep="$studio/$ep"
+    ep="$(cd "$ep" 2>/dev/null && pwd)" || { echo "Error: no folder $1"; exit 2; }
+    case "$ep" in "$studio"/*) ;; *) echo "Error: the episode must be inside the studio folder."; exit 2;; esac
+    cd "$ep"
+    engine=render_v2.py; [ -f "$engine" ] || engine=render.py
+    [ -f "$engine" ] || { echo "Error: no render_v2.py or render.py in $ep"; exit 2; }
+    jobs_dir="$studio/.coucou/renders"; mkdir -p "$jobs_dir" build
+    name="$(basename "$ep")"
+
+    if [ "$mode" = stop ]; then
+      for f in "$jobs_dir"/"$name"-*.json(N); do
+        pid=$("$py" -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("pid","") if d.get("state")=="running" else "")' "$f")
+        [ -n "$pid" ] && pkill -TERM -P "$pid" 2>/dev/null; [ -n "$pid" ] && kill "$pid" 2>/dev/null && echo "Stopped $name."
+      done
+      exit 0
+    fi
+
+    if (( ${@[(Ie)--stills]} )); then
+      "$py" "$engine" "$@" 2>&1 | tail -3
+      echo "Contact sheet: ${ep#$studio/}/build/stills.jpg (read it to check the layout)"
+      exit 0
+    fi
+
+    out=""; start=0; end=""
+    args=("$@")
+    for ((i = 1; i <= ${#args}; i++)); do
+      case "${args[i]}" in
+        --out) out="${args[i+1]}";;
+        --start) start="${args[i+1]}";;
+        --end) end="${args[i+1]}";;
+      esac
+    done
+    if [ -z "$out" ]; then
+      mkdir -p renders
+      out="$ep/renders/${name}_$(date +%Y%m%d-%H%M%S).mp4"
+      args+=(--out "$out")
+    fi
+    case "$out" in /*) ;; *) out="$ep/$out";; esac
+    id="$name-$(date +%s)"
+    job="$jobs_dir/$id.json"; log="$ep/build/render-$id.log"
+    write() { "$py" -c 'import json,sys,time; json.dump({"id":sys.argv[1],"episode":sys.argv[2],"out":sys.argv[3],"log":sys.argv[4],"start":float(sys.argv[5] or 0),"end":float(sys.argv[6] or 0),"state":sys.argv[7],"pid":sys.argv[8],"time":time.time()}, open(sys.argv[9],"w"))' "$id" "${ep#$studio/}" "${out#$studio/}" "$log" "$start" "$end" "$1" "$2" "$job"; }
+    write running ""
+    (
+      "$py" "$engine" "${args[@]}" > "$log" 2>&1
+      rc=$?
+      if [ $rc -eq 0 ] && [ -s "$out" ]; then write done ""; else write failed ""; fi
+    ) </dev/null >/dev/null 2>&1 &!
+    write running "$!"
+    echo "Render started in the background: ${out#$studio/}"
+    echo "A full video takes about 10–18 minutes. Coucou shows the progress in Studio and plays the video there when it's done — tell the owner, and don't wait for it."
+    """#
 
     private static let script = #"""
     #!/bin/zsh

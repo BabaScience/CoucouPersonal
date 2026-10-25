@@ -33,6 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         WhatsNewCenter.shared.noteLaunch()
         // The screen assistant listens for its tool's requests from launch.
         _ = ScreenAgent.shared
+        // Renders started from the YouTube studio are watched even while the window is closed.
+        StudioRenders.shared.start()
         #endif
         // Warm up Keychain cache on main thread BEFORE any poller or view touches it
         _ = KeychainStore.shared

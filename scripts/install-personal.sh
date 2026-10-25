@@ -5,10 +5,13 @@ set -e
 cd "$(dirname "$0")/../NotchBuddy"
 command -v xcodegen >/dev/null || brew install xcodegen
 xcodegen >/dev/null
-xcodebuild -scheme NotchBuddy -configuration Debug -derivedDataPath build/dd build 2>&1 \
-  | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+LOG=build/last-build.log
+mkdir -p build
+xcodebuild -scheme NotchBuddy -configuration Debug -derivedDataPath build/dd build > "$LOG" 2>&1 || true
+grep -E "error:|BUILD (SUCCEEDED|FAILED)" "$LOG" || true
+# Never install the previous app when this build failed.
+grep -q "BUILD SUCCEEDED" "$LOG" || { echo "Build failed: nothing installed (log: NotchBuddy/$LOG)"; exit 1; }
 APP="build/dd/Build/Products/Debug/Coucou.app"
-[ -d "$APP" ] || { echo "Build failed"; exit 1; }
 # Screen Recording, Accessibility and the Keychain item recognise the app by its signature.
 # Signed with the local "Coucou Personal Signing" certificate, every build is the same app to
 # macOS. An ad-hoc signature (the fallback) ties them to one exact build: after each rebuild

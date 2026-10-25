@@ -73,6 +73,7 @@ final class YouTubeStudio: ObservableObject {
 
     private init() {
         loadConversation()
+        DispatchQueue.main.async { StudioRenders.shared.start() }
     }
 
     // MARK: Channel data
@@ -204,9 +205,38 @@ final class YouTubeStudio: ObservableObject {
         for sub in ["scripts", "research", "ideas", ".claude/skills", ".coucou"] {
             try? fm.createDirectory(at: workspace.appendingPathComponent(sub), withIntermediateDirectories: true)
         }
+        connectArtlist()
         let memory = workspace.appendingPathComponent("CLAUDE.md")
         if !fm.fileExists(atPath: memory.path) {
             try? Self.initialMemory(handle: handle, title: channelTitle).write(to: memory, atomically: true, encoding: .utf8)
+        }
+    }
+
+    /// Artlist's MCP server for the studio (images, animations, music and sound effects on the owner's
+    /// Artlist account): declared in .mcp.json and enabled in .claude/settings.local.json. Signing in
+    /// to Artlist happens once in Claude Code (`claude` in this folder, then /mcp).
+    private func connectArtlist() {
+        let fm = FileManager.default
+        let mcp = workspace.appendingPathComponent(".mcp.json")
+        var config = (try? JSONSerialization.jsonObject(with: Data(contentsOf: mcp))) as? [String: Any] ?? [:]
+        var servers = config["mcpServers"] as? [String: Any] ?? [:]
+        if servers["artlist"] == nil {
+            servers["artlist"] = ["type": "http", "url": "https://mcp.artlist.io/mcp"]
+            config["mcpServers"] = servers
+            if let data = try? JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys]) {
+                try? data.write(to: mcp)
+            }
+        }
+        let settings = workspace.appendingPathComponent(".claude/settings.local.json")
+        try? fm.createDirectory(at: settings.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var local = (try? JSONSerialization.jsonObject(with: Data(contentsOf: settings))) as? [String: Any] ?? [:]
+        var enabled = local["enabledMcpjsonServers"] as? [String] ?? []
+        if !enabled.contains("artlist") {
+            enabled.append("artlist")
+            local["enabledMcpjsonServers"] = enabled
+            if let data = try? JSONSerialization.data(withJSONObject: local, options: [.prettyPrinted, .sortedKeys]) {
+                try? data.write(to: settings)
+            }
         }
     }
 
@@ -286,10 +316,11 @@ final class YouTubeStudio: ObservableObject {
             cwd: workspace,
             sessionId: sessionId,
             systemPrompt: Self.chatSystemPrompt,
-            allowedTools: ["WebSearch", "WebFetch", "Read", "Write", "Edit", "Glob", "Grep", "Skill",
-                           "Bash(\(VideoTool.install(in: workspace).path):*)", "Bash(.coucou/bin/coucou-video:*)"],
+            allowedTools: studioTools,
             permissionMode: "acceptEdits",
-            model: model
+            model: model,
+            // The skill's voice script reads it (Hélène, through the key saved in Coucou → Claude).
+            extraEnv: InworldVoice.shared.apiKey.map { ["INWORLD_API_KEY": $0] } ?? [:]
         ) { [weak self] event in
             self?.handle(event)
         }
@@ -321,6 +352,18 @@ final class YouTubeStudio: ObservableObject {
         }
     }
 
+    /// What Claude may use in the studio: the files, the web, the skills, the video and render
+    /// tools, the Shorts engine's Python and ffmpeg (editing and re-rendering episodes).
+    private var studioTools: [String] {
+        let bin = VideoTool.install(in: workspace).path
+        return ["WebSearch", "WebFetch", "Read", "Write", "Edit", "Glob", "Grep", "Skill",
+                "Bash(\(bin)/coucou-video:*)", "Bash(.coucou/bin/coucou-video:*)",
+                "Bash(\(bin)/coucou-render:*)", "Bash(.coucou/bin/coucou-render:*)",
+                "Bash(\(VideoTool.python):*)", "Bash(ffmpeg:*)", "Bash(ffprobe:*)",
+                // Artlist (generation always waits for the owner's OK on the price) and its downloads.
+                "mcp__artlist", "Bash(curl:*)"]
+    }
+
     private static let chatSystemPrompt = """
     You are working inside the YouTube studio folder described in CLAUDE.md. For numbers, read \
     analytics.md first (YouTube Analytics from the API: daily views, watch time, subscribers, traffic \
@@ -332,6 +375,28 @@ final class YouTubeStudio: ObservableObject {
     analytics.md). It saves videos/<id>/ with transcript.txt (what is said, timestamped), sheet.jpg \
     (12 screenshots in one image) and meta.txt. Read sheet.jpg and transcript.txt, then base your \
     analysis on what is actually said and shown — quote the first seconds for the hook.
+
+    MAKING AND EDITING VIDEOS. Episodes live in episodes/<name>/ (episodes/ep02 is « Qu'est-ce qui fait \
+    ta valeur ? », the published Short). Follow the inspiration-shorts skill (its SKILL.md and \
+    references/) for the pipeline, the style and how the owner likes to work. On this Mac: \
+    - Python is ~/CoucouStudio/.venv-shorts/bin/python (use it wherever the skill says `python`); ffmpeg \
+      and ffprobe are installed. INWORLD_API_KEY is set for the voice script. \
+    - Check a layout fast: `.coucou/bin/coucou-render episodes/<name> --stills 2 15 35` (seconds; it \
+      writes build/stills.jpg — Read it). \
+    - Render: `.coucou/bin/coucou-render episodes/<name>` (or --start/--end for a preview, --audio-only \
+      for a re-mix). It runs in the background; Coucou shows progress and then the video in the chat. \
+      Don't wait or poll: say it's rendering and stop. \
+    - When the owner says « do it again », « adjust it » or « apply your suggestions »: edit the episode \
+      files (render_v2.py SEGMENTS/SFX, mg/overlay.html, voiceover.txt…), keep a copy of what you change \
+      (e.g. render_v2.py.bak-<date>), check with --stills, then render to a new file in renders/ — never \
+      overwrite the published video. \
+    - Spending Artlist credits or regenerating the voice changes cost: state it and wait for a clear yes.
+
+    PICTURES IN SLIDES. A slide may show pictures from this folder (paths relative to it): \
+    "image": "videos/<id>/frames/f03.jpg" on a points/quote/image slide, or \
+    {"kind":"compare","title":"…","images":["a.jpg","b.jpg"],"labels":["Avant","Après"]}. Use real \
+    frames when you talk about a moment of a video, and episode assets or build/stills.jpg for edits. \
+    A video can be shown in a reply with a fenced `video` block: {"path":"episodes/ep02/renders/x.mp4","title":"…"}.
 
     ANSWER AS A SHORT PRESENTATION, NOT AS PROSE. The owner doesn't like reading: the app plays a \
     fenced code block whose language is `deck` as animated slides (numbers count up, charts grow, \
@@ -362,6 +427,12 @@ final class YouTubeStudio: ObservableObject {
     """
 
     func stop() { run?.cancel() }
+
+    /// A message from Coucou itself in the chat (a finished render).
+    func post(_ text: String, error: Bool = false) {
+        messages.append(StudioMessage(role: error ? .error : .assistant, text: text))
+        saveConversation()
+    }
 
     func newConversation() {
         stop()

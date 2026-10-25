@@ -1,6 +1,8 @@
 #if !APPSTORE
+import AppKit
 import Charts
 import SwiftUI
+
 
 // MARK: - Model
 
@@ -21,6 +23,11 @@ struct StudioDeck: Decodable, Equatable {
         let icon: String?
         /// What the voice says on this slide (Claude writes it; built from the slide otherwise).
         let narration: String?
+        /// A picture from the studio folder (path relative to it): a video frame, an episode image…
+        let image: String?
+        /// "compare": two pictures side by side, with `labels` under them.
+        let images: [String]?
+        let labels: [String]?
 
         var spokenText: String {
             if let n = narration?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty { return n }
@@ -221,77 +228,139 @@ private struct StudioSlideView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             switch slide.kind {
-            case "title", "cover":
-                Spacer(minLength: 0)
-                if let icon = slide.icon {
-                    Image(systemName: icon).font(.system(size: 30, weight: .semibold)).foregroundColor(StudioPalette.red)
-                        .scaleEffect(shown ? 1 : 0.4).opacity(shown ? 1 : 0)
-                }
-                Text(slide.title ?? "")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .offset(y: shown ? 0 : 18).opacity(shown ? 1 : 0)
-                if let sub = slide.subtitle {
-                    Text(sub).font(.system(size: 15)).foregroundColor(HubTheme.secondary)
-                        .offset(y: shown ? 0 : 18).opacity(shown ? 1 : 0)
-                        .animation(.spring(response: 0.6).delay(0.15), value: shown)
-                }
-                Spacer(minLength: 0)
-            case "stats", "stat", "numbers":
-                heading
-                HStack(alignment: .top, spacing: 14) {
-                    ForEach(Array((slide.stats ?? []).prefix(4).enumerated()), id: \.offset) { i, s in
-                        DeckStat(stat: s, color: StudioPalette.color(i), delay: Double(i) * 0.12)
-                    }
-                }
-                if let cap = slide.caption { caption(cap) }
-            case "chart":
-                heading
-                if let spec = slide.chart {
-                    StudioChartView(spec: StudioChartSpec(type: spec.type, title: nil, unit: spec.unit, data: spec.data), bare: true)
-                }
-                if let cap = slide.caption { caption(cap) }
-            case "quote", "takeaway":
-                Spacer(minLength: 0)
-                HStack(alignment: .top, spacing: 14) {
-                    RoundedRectangle(cornerRadius: 2).fill(StudioPalette.red)
-                        .frame(width: 4).frame(maxHeight: shown ? 110 : 0)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(slide.text ?? slide.title ?? "")
-                            .font(.system(size: 22, weight: .semibold, design: .serif))
-                            .fixedSize(horizontal: false, vertical: true)
-                        if let cap = slide.caption {
-                            Text(cap).font(.system(size: 12.5)).foregroundColor(HubTheme.secondary)
-                        }
-                    }
-                    .opacity(shown ? 1 : 0).offset(x: shown ? 0 : 20)
-                }
-                Spacer(minLength: 0)
-            default: // "points", "list", "actions"
-                heading
-                VStack(alignment: .leading, spacing: 11) {
-                    ForEach(Array((slide.points ?? []).prefix(5).enumerated()), id: \.offset) { i, p in
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
-                            Text("\(i + 1)")
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
-                                .frame(width: 24, height: 24)
-                                .background(Circle().fill(StudioPalette.color(i).opacity(0.9)))
-                                .foregroundColor(.black.opacity(0.8))
-                            Text(p).font(.system(size: 15, weight: .medium))
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .opacity(shown ? 1 : 0)
-                        .offset(x: shown ? 0 : 24)
-                        .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.1 + Double(i) * 0.13), value: shown)
-                    }
-                }
-                if let cap = slide.caption { caption(cap) }
+            case "title", "cover": titleSlide
+            case "stats", "stat", "numbers": statsSlide
+            case "chart": chartSlide
+            case "image", "picture", "screenshot": imageSlide
+            case "compare", "before_after": compareSlide
+            case "quote", "takeaway": quoteSlide
+            default: pointsSlide
             }
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear { withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) { shown = true } }
+    }
+
+    // One view per kind of slide (one big switch was too much for the compiler).
+    @ViewBuilder private var titleSlide: some View {
+        Spacer(minLength: 0)
+        if let icon = slide.icon {
+            Image(systemName: icon).font(.system(size: 30, weight: .semibold)).foregroundColor(StudioPalette.red)
+                .scaleEffect(shown ? 1 : 0.4).opacity(shown ? 1 : 0)
+        }
+        Text(slide.title ?? "")
+            .font(.system(size: 30, weight: .bold, design: .rounded))
+            .fixedSize(horizontal: false, vertical: true)
+            .offset(y: shown ? 0 : 18).opacity(shown ? 1 : 0)
+        if let sub = slide.subtitle {
+            Text(sub).font(.system(size: 15)).foregroundColor(HubTheme.secondary)
+                .offset(y: shown ? 0 : 18).opacity(shown ? 1 : 0)
+                .animation(.spring(response: 0.6).delay(0.15), value: shown)
+        }
+        Spacer(minLength: 0)
+    }
+
+    // One view per kind of slide (one big switch was too much for the compiler).
+    @ViewBuilder private var statsSlide: some View {
+        heading
+        HStack(alignment: .top, spacing: 14) {
+            ForEach(Array((slide.stats ?? []).prefix(4).enumerated()), id: \.offset) { i, s in
+                DeckStat(stat: s, color: StudioPalette.color(i), delay: Double(i) * 0.12)
+            }
+        }
+        if let cap = slide.caption { caption(cap) }
+    }
+
+    // One view per kind of slide (one big switch was too much for the compiler).
+    @ViewBuilder private var chartSlide: some View {
+        heading
+        if let spec = slide.chart {
+            StudioChartView(spec: StudioChartSpec(type: spec.type, title: nil, unit: spec.unit, data: spec.data), bare: true)
+        }
+        if let cap = slide.caption { caption(cap) }
+    }
+
+    // One view per kind of slide (one big switch was too much for the compiler).
+    @ViewBuilder private var imageSlide: some View {
+        heading
+        if let img = slide.image ?? slide.images?.first {
+            DeckImage(path: img, height: 170)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .scaleEffect(shown ? 1 : 0.92).opacity(shown ? 1 : 0)
+        }
+        if let cap = slide.caption { caption(cap) }
+    }
+
+    // One view per kind of slide (one big switch was too much for the compiler).
+    @ViewBuilder private var compareSlide: some View {
+        heading
+        HStack(alignment: .top, spacing: 18) {
+            ForEach(Array((slide.images ?? [slide.image].compactMap { $0 }).prefix(3).enumerated()), id: \.offset) { i, img in
+                VStack(spacing: 6) {
+                    DeckImage(path: img, height: 150)
+                    if let labels = slide.labels, i < labels.count { let label = labels[i]
+                        Text(label).font(.system(size: 12, weight: .semibold))
+                            .padding(.horizontal, 8).padding(.vertical, 2)
+                            .background(Capsule().fill(StudioPalette.color(i).opacity(0.85)))
+                            .foregroundColor(.black.opacity(0.85))
+                    }
+                }
+                .opacity(shown ? 1 : 0).offset(y: shown ? 0 : 16)
+                .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(Double(i) * 0.15), value: shown)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        if let cap = slide.caption { caption(cap) }
+    }
+
+    // One view per kind of slide (one big switch was too much for the compiler).
+    @ViewBuilder private var quoteSlide: some View {
+        Spacer(minLength: 0)
+        HStack(alignment: .top, spacing: 14) {
+            RoundedRectangle(cornerRadius: 2).fill(StudioPalette.red)
+                .frame(width: 4).frame(maxHeight: shown ? 110 : 0)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(slide.text ?? slide.title ?? "")
+                    .font(.system(size: 22, weight: .semibold, design: .serif))
+                    .fixedSize(horizontal: false, vertical: true)
+                if let cap = slide.caption {
+                    Text(cap).font(.system(size: 12.5)).foregroundColor(HubTheme.secondary)
+                }
+            }
+            .opacity(shown ? 1 : 0).offset(x: shown ? 0 : 20)
+        }
+        Spacer(minLength: 0)
+    }
+
+    // One view per kind of slide (one big switch was too much for the compiler).
+    @ViewBuilder private var pointsSlide: some View {
+        heading
+        HStack(alignment: .top, spacing: 16) {
+        VStack(alignment: .leading, spacing: 11) {
+            ForEach(Array((slide.points ?? []).prefix(5).enumerated()), id: \.offset) { i, p in
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("\(i + 1)")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .frame(width: 24, height: 24)
+                        .background(Circle().fill(StudioPalette.color(i).opacity(0.9)))
+                        .foregroundColor(.black.opacity(0.8))
+                    Text(p).font(.system(size: 15, weight: .medium))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .opacity(shown ? 1 : 0)
+                .offset(x: shown ? 0 : 24)
+                .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.1 + Double(i) * 0.13), value: shown)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        if let img = slide.image {
+            DeckImage(path: img, height: 175)
+                .opacity(shown ? 1 : 0).offset(x: shown ? 0 : 20)
+        }
+        }
+        if let cap = slide.caption { caption(cap) }
     }
 
     @ViewBuilder private var heading: some View {
@@ -306,6 +375,37 @@ private struct StudioSlideView: View {
 
     private func caption(_ s: String) -> some View {
         Text(s).font(.system(size: 12)).foregroundColor(HubTheme.muted)
+    }
+}
+
+/// A picture of the studio folder (only there: a path can't reach the rest of the Mac).
+private struct DeckImage: View {
+    let path: String
+    let height: CGFloat
+
+    var body: some View {
+        if let image = Self.load(path) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(maxHeight: height)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.white.opacity(0.15)))
+                .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
+                .onTapGesture { NSWorkspace.shared.open(Self.url(path)!) }
+                .help("Open")
+        } else {
+            Label("Picture not found", systemImage: "photo")
+                .font(.system(size: 11)).foregroundColor(HubTheme.muted)
+                .frame(height: 40)
+        }
+    }
+
+    static func url(_ path: String) -> URL? { StudioFiles.url(path) }
+
+    static func load(_ path: String) -> NSImage? {
+        guard let u = url(path) else { return nil }
+        return NSImage(contentsOf: u)
     }
 }
 

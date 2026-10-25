@@ -573,6 +573,7 @@ private struct StudioChat: View {
                     DispatchQueue.main.async { proxy.scrollTo(target, anchor: .bottom) }
                 }
             }
+            StudioRenderBar()
             HubWrap(spacing: 6) {
                 ForEach(studioActions) { a in
                     Button {
@@ -693,6 +694,7 @@ struct StudioMessageRow: View {
                         case .text(let t): ChatMarkdownView(markdown: t)
                         case .chart(let spec): StudioChartView(spec: spec)
                         case .deck(let deck): StudioDeckView(deck: deck)
+                        case .video(let path, let title): StudioVideoView(path: path, title: title)
                         }
                     }
                 }
@@ -721,14 +723,14 @@ struct StudioChartSpec: Decodable, Equatable {
     let unit: String?
     let data: [Point]
 
-    enum Part { case text(String), chart(StudioChartSpec), deck(StudioDeck) }
+    enum Part { case text(String), chart(StudioChartSpec), deck(StudioDeck), video(path: String, title: String?) }
 
     /// Splits a message into Markdown, chart and deck blocks (a broken block stays as text).
     static func split(_ text: String) -> [Part] {
         var parts: [Part] = []
         var rest = Substring(text)
         while true {
-            let opens = ["```deck", "```chart"].compactMap { tag in rest.range(of: tag).map { (tag, $0) } }
+            let opens = ["```deck", "```chart", "```video"].compactMap { tag in rest.range(of: tag).map { (tag, $0) } }
             guard let (tag, open) = opens.min(by: { $0.1.lowerBound < $1.1.lowerBound }) else { break }
             let before = String(rest[..<open.lowerBound])
             let afterOpen = rest[open.upperBound...]
@@ -738,6 +740,9 @@ struct StudioChartSpec: Decodable, Equatable {
             let data = Data(json.utf8)
             if tag == "```deck", let deck = try? JSONDecoder().decode(StudioDeck.self, from: data), !deck.slides.isEmpty {
                 parts.append(.deck(deck))
+            } else if tag == "```video", let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                      let path = obj["path"] as? String {
+                parts.append(.video(path: path, title: obj["title"] as? String))
             } else if tag == "```chart", let spec = try? JSONDecoder().decode(StudioChartSpec.self, from: data), !spec.data.isEmpty {
                 parts.append(.chart(spec))
             } else {
