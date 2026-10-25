@@ -220,13 +220,37 @@ struct StudioDeckView: View {
     }
 }
 
+// MARK: - Big slides
+
+private struct DeckLargeKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// Slides drawn for the full stage (Conversation's show): bigger type, poster headlines.
+    var deckLarge: Bool {
+        get { self[DeckLargeKey.self] }
+        set { self[DeckLargeKey.self] = newValue }
+    }
+}
+
 /// One slide.
-private struct StudioSlideView: View {
+struct StudioSlideView: View {
     let slide: StudioDeck.Slide
+    @Environment(\.deckLarge) private var large
     @State private var shown = false
 
+    /// The stage's poster headline (condensed, upper case), or the chat's rounded one.
+    private func headline(_ text: String, chat: CGFloat, stage: CGFloat) -> Text {
+        large
+            ? Text(text.uppercased()).font(.system(size: stage, weight: .heavy).width(.condensed))
+            : Text(text).font(.system(size: chat, weight: .bold, design: .rounded))
+    }
+
+    private func sized(_ chat: CGFloat, _ stage: CGFloat) -> CGFloat { large ? stage : chat }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: sized(14, 22)) {
             switch slide.kind {
             case "title", "cover": titleSlide
             case "stats", "stat", "numbers": statsSlide
@@ -237,7 +261,7 @@ private struct StudioSlideView: View {
             default: pointsSlide
             }
         }
-        .padding(.horizontal, 22)
+        .padding(.horizontal, sized(22, 36))
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear { withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) { shown = true } }
@@ -250,12 +274,11 @@ private struct StudioSlideView: View {
             Image(systemName: icon).font(.system(size: 30, weight: .semibold)).foregroundColor(StudioPalette.red)
                 .scaleEffect(shown ? 1 : 0.4).opacity(shown ? 1 : 0)
         }
-        Text(slide.title ?? "")
-            .font(.system(size: 30, weight: .bold, design: .rounded))
+        headline(slide.title ?? "", chat: 30, stage: 64)
             .fixedSize(horizontal: false, vertical: true)
             .offset(y: shown ? 0 : 18).opacity(shown ? 1 : 0)
         if let sub = slide.subtitle {
-            Text(sub).font(.system(size: 15)).foregroundColor(HubTheme.secondary)
+            Text(sub).font(.system(size: sized(15, 20))).foregroundColor(HubTheme.secondary)
                 .offset(y: shown ? 0 : 18).opacity(shown ? 1 : 0)
                 .animation(.spring(response: 0.6).delay(0.15), value: shown)
         }
@@ -286,7 +309,7 @@ private struct StudioSlideView: View {
     @ViewBuilder private var imageSlide: some View {
         heading
         if let img = slide.image ?? slide.images?.first {
-            DeckImage(path: img, height: 170)
+            DeckImage(path: img, height: sized(170, 300))
                 .frame(maxWidth: .infinity, alignment: .center)
                 .scaleEffect(shown ? 1 : 0.92).opacity(shown ? 1 : 0)
         }
@@ -299,7 +322,7 @@ private struct StudioSlideView: View {
         HStack(alignment: .top, spacing: 18) {
             ForEach(Array((slide.images ?? [slide.image].compactMap { $0 }).prefix(3).enumerated()), id: \.offset) { i, img in
                 VStack(spacing: 6) {
-                    DeckImage(path: img, height: 150)
+                    DeckImage(path: img, height: sized(150, 270))
                     if let labels = slide.labels, i < labels.count { let label = labels[i]
                         Text(label).font(.system(size: 12, weight: .semibold))
                             .padding(.horizontal, 8).padding(.vertical, 2)
@@ -323,10 +346,10 @@ private struct StudioSlideView: View {
                 .frame(width: 4).frame(maxHeight: shown ? 110 : 0)
             VStack(alignment: .leading, spacing: 8) {
                 Text(slide.text ?? slide.title ?? "")
-                    .font(.system(size: 22, weight: .semibold, design: .serif))
+                    .font(.system(size: sized(22, 36), weight: .semibold, design: .serif))
                     .fixedSize(horizontal: false, vertical: true)
                 if let cap = slide.caption {
-                    Text(cap).font(.system(size: 12.5)).foregroundColor(HubTheme.secondary)
+                    Text(cap).font(.system(size: sized(12.5, 16))).foregroundColor(HubTheme.secondary)
                 }
             }
             .opacity(shown ? 1 : 0).offset(x: shown ? 0 : 20)
@@ -342,11 +365,11 @@ private struct StudioSlideView: View {
             ForEach(Array((slide.points ?? []).prefix(5).enumerated()), id: \.offset) { i, p in
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     Text("\(i + 1)")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .frame(width: 24, height: 24)
+                        .font(.system(size: sized(12, 16), weight: .bold, design: .rounded))
+                        .frame(width: sized(24, 32), height: sized(24, 32))
                         .background(Circle().fill(StudioPalette.color(i).opacity(0.9)))
                         .foregroundColor(.black.opacity(0.8))
-                    Text(p).font(.system(size: 15, weight: .medium))
+                    Text(p).font(.system(size: sized(15, 22), weight: .semibold))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .opacity(shown ? 1 : 0)
@@ -356,7 +379,7 @@ private struct StudioSlideView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         if let img = slide.image {
-            DeckImage(path: img, height: 175)
+            DeckImage(path: img, height: sized(175, 300))
                 .opacity(shown ? 1 : 0).offset(x: shown ? 0 : 20)
         }
         }
@@ -365,16 +388,17 @@ private struct StudioSlideView: View {
 
     @ViewBuilder private var heading: some View {
         if let t = slide.title {
-            Text(t).font(.system(size: 19, weight: .bold, design: .rounded))
+            headline(t, chat: 19, stage: 46)
                 .fixedSize(horizontal: false, vertical: true)
+                .offset(y: shown || !large ? 0 : 24).opacity(shown || !large ? 1 : 0)
         }
         if let sub = slide.subtitle {
-            Text(sub).font(.system(size: 12.5)).foregroundColor(HubTheme.secondary)
+            Text(sub).font(.system(size: sized(12.5, 17))).foregroundColor(HubTheme.secondary)
         }
     }
 
     private func caption(_ s: String) -> some View {
-        Text(s).font(.system(size: 12)).foregroundColor(HubTheme.muted)
+        Text(s).font(.system(size: sized(12, 15))).foregroundColor(HubTheme.muted)
     }
 }
 
@@ -414,6 +438,7 @@ private struct DeckStat: View {
     let stat: StudioDeck.Stat
     let color: Color
     let delay: Double
+    @Environment(\.deckLarge) private var large
     @State private var value: Double = 0
     @State private var shown = false
 
@@ -427,10 +452,10 @@ private struct DeckStat: View {
                     Text(stat.display)
                 }
             }
-            .font(.system(size: 32, weight: .bold, design: .rounded))
+            .font(.system(size: large ? 58 : 32, weight: .bold, design: .rounded))
             .foregroundColor(color)
             .lineLimit(1).minimumScaleFactor(0.5)
-            Text(stat.label).font(.system(size: 12.5, weight: .medium)).foregroundColor(HubTheme.secondary)
+            Text(stat.label).font(.system(size: large ? 16 : 12.5, weight: .medium)).foregroundColor(HubTheme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if let d = stat.delta {
                 Text(d)
@@ -441,7 +466,7 @@ private struct DeckStat: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
+        .padding(large ? 18 : 12)
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.06)))
         .scaleEffect(shown ? 1 : 0.85).opacity(shown ? 1 : 0)
         .onAppear {

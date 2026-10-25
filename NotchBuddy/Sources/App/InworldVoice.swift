@@ -141,6 +141,15 @@ final class InworldVoice: NSObject, ObservableObject, AVAudioPlayerDelegate {
         speaking = false
     }
 
+    /// How far the current line has been played (0…1), for subtitles that follow the voice.
+    var playbackProgress: Double {
+        guard let p = player, p.duration > 0 else { return 0 }
+        return min(1, p.currentTime / p.duration)
+    }
+
+    func pause() { player?.pause() }
+    func resume() { player?.play() }
+
     func stop() {
         player?.stop()
         player = nil

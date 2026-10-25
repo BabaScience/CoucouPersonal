@@ -30,6 +30,13 @@ final class StudioConversation: ObservableObject {
     /// Listening hands-free (a tap) rather than while the key or button is held.
     @Published private(set) var handsFree = false
 
+    // The show: the answer's deck on the whole stage, Mochi presenting it slide by slide.
+    @Published private(set) var showing = false
+    @Published private(set) var slide = 0
+    /// The line said on the current slide (the subtitles).
+    @Published private(set) var subtitle = ""
+    @Published private(set) var paused = false
+
     /// The live words while listening (an @Observable, read straight by the stage).
     let dictation = MacDictation()
 
@@ -37,6 +44,7 @@ final class StudioConversation: ObservableObject {
     private var speaker: Task<Void, Never>?
     private var finalHandled = false
     private let fallback = MacVoice()
+    private var show: Task<Void, Never>?
 
     // MARK: Listening
 
@@ -47,6 +55,7 @@ final class StudioConversation: ObservableObject {
             return
         }
         stopSpeaking()
+        closeShow()
         self.handsFree = handsFree
         phase = .listening
         Task {
@@ -82,6 +91,7 @@ final class StudioConversation: ObservableObject {
     /// A request, spoken or picked from the suggestions.
     func ask(_ text: String) {
         guard !YouTubeStudio.shared.running else { return }
+        closeShow()
         said = text
         steps = []
         deck = nil
@@ -126,6 +136,7 @@ final class StudioConversation: ObservableObject {
             }
             if !finalHandled { handleFinal(result) }
             phase = .done
+            if let deck, deck.slides.count > 1 { startShow() }
         }
     }
 
@@ -188,6 +199,86 @@ final class StudioConversation: ObservableObject {
         talking = false
     }
 
+    // MARK: Show
+
+    /// Plays the deck on the whole stage once Mochi has said its line: each slide's narration is
+    /// spoken with subtitles, and the next one is prepared meanwhile.
+    func startShow(from start: Int = 0) {
+        guard let deck, !deck.slides.isEmpty else { return }
+        show?.cancel()
+        paused = false
+        slide = min(max(0, start), deck.slides.count - 1)
+        // While Mochi finishes its opening line, that line is the subtitle.
+        subtitle = speaker != nil ? line : deck.slides[slide].spokenText
+        showing = true
+        show = Task {
+            while speaker != nil { try? await Task.sleep(nanoseconds: 150_000_000) }
+            for i in slide..<deck.slides.count {
+                if Task.isCancelled { return }
+                slide = i
+                subtitle = deck.slides[i].spokenText
+                if i + 1 < deck.slides.count, InworldVoice.shared.isConfigured {
+                    let next = deck.slides[i + 1].spokenText
+                    Task { _ = try? await InworldVoice.shared.audio(for: next) }
+                }
+                talking = true
+                await voiceSay(subtitle)
+                talking = false
+                if Task.isCancelled { return }
+                try? await Task.sleep(nanoseconds: 700_000_000)
+            }
+            if Task.isCancelled { return }
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            if !Task.isCancelled { closeShow() }
+        }
+    }
+
+    func showGo(_ i: Int) {
+        guard let deck, i >= 0, i < deck.slides.count else { return }
+        show?.cancel()
+        queue.removeAll()
+        voiceStop()
+        startShow(from: i)
+    }
+
+    func togglePause() {
+        paused.toggle()
+        if InworldVoice.shared.isConfigured {
+            paused ? InworldVoice.shared.pause() : InworldVoice.shared.resume()
+        } else {
+            paused ? fallback.pause() : fallback.resume()
+        }
+        talking = !paused && show != nil
+    }
+
+    func closeShow() {
+        guard showing || show != nil else { return }
+        show?.cancel()
+        show = nil
+        voiceStop()
+        talking = false
+        paused = false
+        showing = false
+    }
+
+    /// How far the current line has been said (0…1), for the subtitles.
+    var speechProgress: Double {
+        InworldVoice.shared.isConfigured ? InworldVoice.shared.playbackProgress : fallback.progress
+    }
+
+    private func voiceSay(_ text: String) async {
+        if InworldVoice.shared.isConfigured {
+            await InworldVoice.shared.speak(text)
+        } else {
+            await fallback.speak(text)
+        }
+    }
+
+    private func voiceStop() {
+        InworldVoice.shared.stop()
+        fallback.stop()
+    }
+
     // MARK: Text
 
     /// Markdown, code and links out: what a voice can say.
@@ -219,6 +310,9 @@ final class StudioConversation: ObservableObject {
 private final class MacVoice: NSObject, AVSpeechSynthesizerDelegate {
     private let synth = AVSpeechSynthesizer()
     private var finished: CheckedContinuation<Void, Never>?
+    private var length = 1
+    /// The part of the line said so far (0…1).
+    private(set) var progress: Double = 0
 
     override init() {
         super.init()
@@ -227,6 +321,8 @@ private final class MacVoice: NSObject, AVSpeechSynthesizerDelegate {
 
     func speak(_ text: String) async {
         stop()
+        length = max(1, (text as NSString).length)
+        progress = 0
         let u = AVSpeechUtterance(string: text)
         u.voice = AVSpeechSynthesisVoice(language: "fr-FR")
         await withCheckedContinuation { c in
@@ -235,10 +331,19 @@ private final class MacVoice: NSObject, AVSpeechSynthesizerDelegate {
         }
     }
 
+    func pause() { synth.pauseSpeaking(at: .word) }
+    func resume() { synth.continueSpeaking() }
+
     func stop() {
         if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
         finished?.resume()
         finished = nil
+    }
+
+    nonisolated func speechSynthesizer(_ s: AVSpeechSynthesizer, willSpeakRangeOfSpeechString range: NSRange,
+                                       utterance u: AVSpeechUtterance) {
+        let end = range.location + range.length
+        Task { @MainActor in self.progress = min(1, Double(end) / Double(self.length)) }
     }
 
     nonisolated func speechSynthesizer(_ s: AVSpeechSynthesizer, didFinish u: AVSpeechUtterance) {
@@ -262,6 +367,23 @@ struct ConversationStage: View {
     private let suggestions = ["Fais-moi le point de la semaine", "Regarde mon dernier Short", "Donne-moi 3 idées de vidéos"]
 
     var body: some View {
+        ZStack {
+            if talk.showing, let deck = talk.deck {
+                StudioShow(deck: deck)
+                    .padding(.horizontal, 16).padding(.bottom, 14).padding(.top, 2)
+                    .transition(.scale(scale: 0.94).combined(with: .opacity))
+            } else {
+                stage.transition(.opacity)
+            }
+        }
+        .animation(.spring(response: 0.55, dampingFraction: 0.88), value: talk.showing)
+        // Nothing here may push the glass window's minimum size (it follows the content's).
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+        .onAppear(perform: installKeys)
+        .onDisappear(perform: removeKeys)
+    }
+
+    private var stage: some View {
         VStack(spacing: 0) {
             HStack {
                 Text(statusTitle).font(.system(size: 12, weight: .heavy)).tracking(1.1).foregroundColor(statusColor)
@@ -325,10 +447,7 @@ struct ConversationStage: View {
 
             controls.padding(.bottom, 18)
         }
-        // Nothing here may push the glass window's minimum size (it follows the content's).
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
-        .onAppear(perform: installKeys)
-        .onDisappear(perform: removeKeys)
     }
 
     // MARK: Pieces
@@ -376,9 +495,20 @@ struct ConversationStage: View {
         VStack(spacing: 12) {
             if talk.phase == .ready || talk.phase == .done || talk.phase == .failed {
                 HStack(spacing: 8) {
-                    ForEach(suggestions, id: \.self) { s in
+                    if talk.phase == .done, let deck = talk.deck, deck.slides.count > 1 {
+                        Button { talk.startShow() } label: {
+                            Label("Revoir la présentation", systemImage: "play.rectangle.fill")
+                                .font(.system(size: 12, weight: .bold))
+                                .padding(.horizontal, 12).padding(.vertical, 7)
+                                .background(Capsule().fill(HubTheme.accent))
+                                .foregroundColor(HubTheme.onAccent)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    // With the replay button there, two suggestions keep the row on one line.
+                    ForEach(suggestions.prefix(talk.phase == .done && talk.deck != nil ? 2 : 3), id: \.self) { s in
                         Button { talk.ask(s) } label: {
-                            Text("« \(s) »").font(.system(size: 12, weight: .semibold))
+                            Text("« \(s) »").font(.system(size: 12, weight: .semibold)).lineLimit(1)
                                 .padding(.horizontal, 12).padding(.vertical, 7)
                                 .background(Capsule().fill(Color.white.opacity(0.07)))
                                 .overlay(Capsule().strokeBorder(Color.white.opacity(0.12)))
