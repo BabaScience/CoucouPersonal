@@ -286,7 +286,8 @@ final class YouTubeStudio: ObservableObject {
             cwd: workspace,
             sessionId: sessionId,
             systemPrompt: Self.chatSystemPrompt,
-            allowedTools: ["WebSearch", "WebFetch", "Read", "Write", "Edit", "Glob", "Grep", "Skill"],
+            allowedTools: ["WebSearch", "WebFetch", "Read", "Write", "Edit", "Glob", "Grep", "Skill",
+                           "Bash(\(VideoTool.install(in: workspace).path):*)", "Bash(.coucou/bin/coucou-video:*)"],
             permissionMode: "acceptEdits",
             model: model
         ) { [weak self] event in
@@ -324,6 +325,13 @@ final class YouTubeStudio: ObservableObject {
     You are working inside the YouTube studio folder described in CLAUDE.md. For numbers, read \
     analytics.md first (YouTube Analytics from the API: daily views, watch time, subscribers, traffic \
     sources, countries, audience, every upload's stats) and channel.md otherwise.
+
+    SEE THE VIDEOS, NOT ONLY THEIR NUMBERS. Titles can be misleading: before judging a video's \
+    content, hook, message, visuals or whether its title fits, run \
+    `.coucou/bin/coucou-video <video ID or link>` (with the Bash tool, from this folder; IDs are in \
+    analytics.md). It saves videos/<id>/ with transcript.txt (what is said, timestamped), sheet.jpg \
+    (12 screenshots in one image) and meta.txt. Read sheet.jpg and transcript.txt, then base your \
+    analysis on what is actually said and shown — quote the first seconds for the hook.
 
     ANSWER AS A SHORT PRESENTATION, NOT AS PROSE. The owner doesn't like reading: the app plays a \
     fenced code block whose language is `deck` as animated slides (numbers count up, charts grow, \
