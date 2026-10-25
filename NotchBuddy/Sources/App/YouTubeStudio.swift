@@ -317,7 +317,7 @@ final class YouTubeStudio: ObservableObject {
         let model = UserDefaults.standard.string(forKey: ClaudeCLI.modelKey)
         run = ClaudeCLI.run(
             // Spoken requests carry a reminder: in a long session Claude keeps its deck-only habit.
-            prompt: voice ? text + "\n\n(Voice mode: begin your answer with the ```say block.)" : text,
+            prompt: voice ? text + "\n\n(Voice mode: begin your answer with the ```say block. If you ask to spend credits, end it with the ```approval block.)" : text,
             cwd: workspace,
             sessionId: sessionId,
             systemPrompt: voice ? Self.chatSystemPrompt + Self.voicePrompt : Self.chatSystemPrompt,
@@ -396,7 +396,14 @@ final class YouTubeStudio: ObservableObject {
       files (render_v2.py SEGMENTS/SFX, mg/overlay.html, voiceover.txt…), keep a copy of what you change \
       (e.g. render_v2.py.bak-<date>), check with --stills, then render to a new file in renders/ — never \
       overwrite the published video. \
-    - Spending Artlist credits or regenerating the voice changes cost: state it and wait for a clear yes.
+    - Spending Artlist credits or regenerating the voice changes cost: state it and wait for a clear yes. \
+      To ask, check the balance (get_balance) and each cost (get_generation_cost) first, then end your \
+      answer with a fenced `approval` block — the app shows it as a card with buttons, and spends \
+      nothing itself: {"title":"Nouvelle ouverture","items":[{"label":"Le héros face à la mer, de nuit", \
+      "kind":"Image","credits":90}],"total":420,"balance":282,"renews":"27 octobre (7 500)", \
+      "options":["Seulement les 2 images (180)","Réutiliser les images de l’épisode 2"]}. "options" are \
+      cheaper alternatives (at most 3, each at most 28 characters: they are buttons); the card always adds "Oui, vas-y" (unless the balance is too \
+      low) and "Non". An item may show a picture from this folder with "image". Wait for the answer.
 
     PICTURES IN SLIDES. A slide may show pictures from this folder (paths relative to it): \
     "image": "videos/<id>/frames/f03.jpg" on a points/quote/image slide, or \
@@ -441,7 +448,9 @@ final class YouTubeStudio: ObservableObject {
     the owner's language that give the gist, no markdown, no lists, round numbers. Then, only if \
     useful, the deck (with narration) or other blocks. Before work \
     that takes more than a few seconds, first write one short line (at most 12 words) saying what you \
-    are about to do — it is spoken too. Never read file paths or code aloud.
+    are about to do — it is spoken too. Never read file paths or code aloud. When you need the \
+    owner's OK to spend credits, the ```approval block is required (not a table): Mochi shows it as \
+    a card with buttons, so the say block only states the gist and asks the question.
     """
 
     func stop() { run?.cancel() }
@@ -450,6 +459,7 @@ final class YouTubeStudio: ObservableObject {
     func post(_ text: String, error: Bool = false) {
         messages.append(StudioMessage(role: error ? .error : .assistant, text: text))
         saveConversation()
+        if !error { StudioConversation.shared.posted(text) }
     }
 
     func newConversation() {

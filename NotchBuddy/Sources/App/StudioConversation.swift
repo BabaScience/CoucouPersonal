@@ -10,7 +10,11 @@ import SwiftUI
 final class StudioConversation: ObservableObject {
     static let shared = StudioConversation()
 
-    enum Phase { case ready, listening, working, done, failed }
+    /// `asking`: an answer that waits for the owner's OK before spending credits.
+    enum Phase { case ready, listening, working, done, asking, failed }
+
+    /// A video the answer shows (a finished render).
+    struct Clip: Equatable { let path: String; let title: String? }
 
     struct Step: Identifiable, Equatable {
         let id = UUID()
@@ -25,6 +29,8 @@ final class StudioConversation: ObservableObject {
     @Published private(set) var line = ""
     @Published private(set) var steps: [Step] = []
     @Published private(set) var deck: StudioDeck?
+    @Published private(set) var clip: Clip?
+    @Published private(set) var approval: StudioApproval?
     /// Mochi's mouth moves while a line is spoken.
     @Published private(set) var talking = false
     /// Listening hands-free (a tap) rather than while the key or button is held.
@@ -95,6 +101,8 @@ final class StudioConversation: ObservableObject {
         said = text
         steps = []
         deck = nil
+        clip = nil
+        approval = nil
         line = ""
         finalHandled = false
         phase = .working
@@ -135,7 +143,7 @@ final class StudioConversation: ObservableObject {
                 return
             }
             if !finalHandled { handleFinal(result) }
-            phase = .done
+            phase = approval != nil ? .asking : .done
             if let deck, deck.slides.count > 1 { startShow() }
         }
     }
@@ -148,6 +156,8 @@ final class StudioConversation: ObservableObject {
             switch part {
             case .say(let s): spoken = s
             case .deck(let d): deck = d
+            case .video(let path, let title): clip = Clip(path: path, title: title)
+            case .approval(let a): approval = a
             default: break
             }
         }
@@ -197,6 +207,27 @@ final class StudioConversation: ObservableObject {
         InworldVoice.shared.stop()
         fallback.stop()
         talking = false
+    }
+
+    // MARK: Coucou's own news
+
+    /// A message Coucou posts itself (a render that finished): in Conversation mode, Mochi shows
+    /// the video and says so, unless the owner is talking or Claude is busy.
+    func posted(_ text: String) {
+        guard UserDefaults.standard.string(forKey: "studio.mode") == "conversation",
+              phase != .listening, phase != .working else { return }
+        for part in StudioChartSpec.split(text) {
+            if case .video(let path, let title) = part {
+                closeShow()
+                deck = nil
+                approval = nil
+                clip = Clip(path: path, title: title)
+                line = "Ta vidéo est prête ! Regarde, et dis-moi ce que tu en penses."
+                phase = .done
+                say(line)
+                return
+            }
+        }
     }
 
     // MARK: Show
@@ -363,6 +394,10 @@ struct ConversationStage: View {
     @ObservedObject private var studio = YouTubeStudio.shared
     @State private var keyMonitor: Any?
     @State private var pressStart: Date?
+    /// Typing instead of talking (a quiet room, a long link).
+    @State private var typing = false
+    @State private var typed = ""
+    @FocusState private var typedFocus: Bool
 
     private let suggestions = ["Fais-moi le point de la semaine", "Regarde mon dernier Short", "Donne-moi 3 idées de vidéos"]
 
@@ -372,15 +407,39 @@ struct ConversationStage: View {
                 StudioShow(deck: deck)
                     .padding(.horizontal, 16).padding(.bottom, 14).padding(.top, 2)
                     .transition(.scale(scale: 0.94).combined(with: .opacity))
+            } else if talk.phase == .asking, let ask = talk.approval {
+                special { ConversationApproval(ask: ask) }
+            } else if talk.phase == .done, let clip = talk.clip {
+                special { ConversationResult(clip: clip) }
             } else {
                 stage.transition(.opacity)
             }
         }
         .animation(.spring(response: 0.55, dampingFraction: 0.88), value: talk.showing)
+        .animation(.spring(response: 0.55, dampingFraction: 0.88), value: talk.phase)
         // Nothing here may push the glass window's minimum size (it follows the content's).
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         .onAppear(perform: installKeys)
         .onDisappear(perform: removeKeys)
+    }
+
+    /// The result and approval stages: the status on top, the talk button below.
+    private func special<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(statusTitle).font(.system(size: 12, weight: .heavy)).tracking(1.1).foregroundColor(statusColor)
+                Spacer()
+            }
+            .padding(.horizontal, 22).padding(.top, 6)
+            content()
+            HStack(spacing: 14) {
+                talkButton.scaleEffect(0.75).frame(width: 54, height: 54)
+                Text(talk.phase == .asking ? "Maintiens pour répondre" : "J’attends ta prochaine idée")
+                    .font(.system(size: 13)).foregroundColor(HubTheme.secondary)
+            }
+            .padding(.bottom, 16)
+        }
+        .transition(.scale(scale: 0.96).combined(with: .opacity))
     }
 
     private var stage: some View {
@@ -519,10 +578,27 @@ struct ConversationStage: View {
             }
             HStack(spacing: 14) {
                 talkButton
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(hintTitle).font(.system(size: 13.5, weight: .bold))
-                    Text(hintDetail).font(.system(size: 12)).foregroundColor(HubTheme.secondary)
+                if typing {
+                    TextField("Écris ta demande…", text: $typed)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 14))
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.08)))
+                        .frame(width: 380)
+                        .focused($typedFocus)
+                        .onSubmit(sendTyped)
+                    HubIconButton(symbol: "arrow.up", help: "Envoyer", action: sendTyped)
+                } else {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(hintTitle).font(.system(size: 13.5, weight: .bold))
+                        Text(hintDetail).font(.system(size: 12)).foregroundColor(HubTheme.secondary)
+                    }
                 }
+                HubIconButton(symbol: typing ? "xmark" : "keyboard", help: typing ? "Fermer" : "Écrire au lieu de parler") {
+                    typing.toggle()
+                    typedFocus = typing
+                }
+                .disabled(talk.phase == .working)
             }
         }
     }
@@ -564,6 +640,14 @@ struct ConversationStage: View {
         .accessibilityAddTraits(.isButton)
     }
 
+    private func sendTyped() {
+        let text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        typed = ""
+        typing = false
+        talk.ask(text)
+    }
+
     // MARK: Words
 
     private var statusTitle: String {
@@ -572,6 +656,7 @@ struct ConversationStage: View {
         case .listening: return "J’ÉCOUTE"
         case .working: return "JE TRAVAILLE"
         case .done: return talk.talking ? "JE TE RÉPONDS" : "C’EST PRÊT"
+        case .asking: return "J’AI BESOIN DE TON OK"
         case .failed: return "OUPS"
         }
     }
@@ -581,6 +666,7 @@ struct ConversationStage: View {
         case .listening: return Color(hex: "#FFB4AE")
         case .working: return Color(hex: "#C4B5FD")
         case .done: return Color(hex: "#6EE7B7")
+        case .asking: return Color(hex: "#FCD34D")
         case .failed: return Color(hex: "#FCA5A5")
         case .ready: return HubTheme.muted
         }
@@ -664,7 +750,7 @@ struct ConversationMochi: View {
                 }
                 figure(t)
                     .offset(y: bob(t))
-                    .rotationEffect(.degrees(phase == .listening ? 3 * sin(t * 2.8) : 0))
+                    .rotationEffect(.degrees(phase == .listening ? 3 * sin(t * 2.8) : phase == .asking ? 4 * sin(t * 2.6) : 0))
             }
         }
     }
@@ -675,6 +761,7 @@ struct ConversationMochi: View {
         switch phase {
         case .working: return [Color(hex: "#ECE6FF"), Color(hex: "#B9A9F5")]
         case .done: return [Color(hex: "#ECFFF6"), Color(hex: "#A7F3D0")]
+        case .asking: return [Color(hex: "#FFF6D6"), Color(hex: "#FCD34D")]
         case .failed: return [Color(hex: "#FFE9E7"), Color(hex: "#FCA5A5")]
         default: return [.white, Color(hex: "#D4D6DC")]
         }

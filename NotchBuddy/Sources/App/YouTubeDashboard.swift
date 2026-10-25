@@ -705,6 +705,7 @@ struct StudioMessageRow: View {
                         case .chart(let spec): StudioChartView(spec: spec)
                         case .deck(let deck): StudioDeckView(deck: deck)
                         case .video(let path, let title): StudioVideoView(path: path, title: title)
+                        case .approval(let ask): StudioApprovalCard(ask: ask, large: false)
                         case .say(let line):
                             Label(line, systemImage: "speaker.wave.2.fill")
                                 .font(.system(size: 14, weight: .semibold))
@@ -751,14 +752,14 @@ struct StudioChartSpec: Decodable, Equatable {
     let unit: String?
     let data: [Point]
 
-    enum Part { case text(String), chart(StudioChartSpec), deck(StudioDeck), video(path: String, title: String?), say(String) }
+    enum Part { case text(String), chart(StudioChartSpec), deck(StudioDeck), video(path: String, title: String?), say(String), approval(StudioApproval) }
 
     /// Splits a message into Markdown, chart and deck blocks (a broken block stays as text).
     static func split(_ text: String) -> [Part] {
         var parts: [Part] = []
         var rest = Substring(text)
         while true {
-            let opens = ["```deck", "```chart", "```video", "```say"].compactMap { tag in rest.range(of: tag).map { (tag, $0) } }
+            let opens = ["```deck", "```chart", "```video", "```say", "```approval"].compactMap { tag in rest.range(of: tag).map { (tag, $0) } }
             guard let (tag, open) = opens.min(by: { $0.1.lowerBound < $1.1.lowerBound }) else { break }
             let before = String(rest[..<open.lowerBound])
             let afterOpen = rest[open.upperBound...]
@@ -768,6 +769,8 @@ struct StudioChartSpec: Decodable, Equatable {
             let data = Data(json.utf8)
             if tag == "```say" {
                 parts.append(.say(json))
+            } else if tag == "```approval", let ask = try? JSONDecoder().decode(StudioApproval.self, from: data), !ask.items.isEmpty {
+                parts.append(.approval(ask))
             } else if tag == "```deck", let deck = try? JSONDecoder().decode(StudioDeck.self, from: data), !deck.slides.isEmpty {
                 parts.append(.deck(deck))
             } else if tag == "```video", let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],

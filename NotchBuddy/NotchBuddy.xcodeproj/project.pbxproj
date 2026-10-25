@@ -15,6 +15,7 @@
 		06BF5FD95E03010CAFDBF2D0 /* NotchBuddyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1BD8F3CAA60CF37640759E1 /* NotchBuddyApp.swift */; };
 		077ECE0906D8E820BD5FA764 /* DiffEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B32FB972D02162720E566674 /* DiffEngine.swift */; };
 		07EC91820A69E8BF11EC778D /* PillColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37564F5F041B38C976DF3DEF /* PillColors.swift */; };
+		0894B5C78E527537942D1C7D /* StudioStages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CFB37C6D43343EFD24F2AA0 /* StudioStages.swift */; };
 		091EC3B2F1060D7EE1317E4E /* IslandWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D710BD7834228045869D0184 /* IslandWindowController.swift */; };
 		0BD9756F8AD5C1ECA6B604FB /* FlowDictation.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECD4A635006365A493A57B18 /* FlowDictation.swift */; };
 		14869F429444B31D072A75B8 /* FlowHubNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2669CBBE5BDF9C775132D1 /* FlowHubNotes.swift */; };
@@ -234,6 +235,7 @@
 		7C1A7D5CBE2AC084A10C5FF3 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		7C432FE1286945E42D3E11D7 /* VoiceResultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceResultView.swift; sourceTree = "<group>"; };
 		7C8178EB447DDE9C03427B36 /* ParakeetEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParakeetEngine.swift; sourceTree = "<group>"; };
+		7CFB37C6D43343EFD24F2AA0 /* StudioStages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudioStages.swift; sourceTree = "<group>"; };
 		7FAFA7A414691A7B5F4A5984 /* StudioDeck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudioDeck.swift; sourceTree = "<group>"; };
 		8436291D94C826F1D9DA3130 /* FlowSettingsBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowSettingsBox.swift; sourceTree = "<group>"; };
 		84ECC59BE7CDDEE348FC7096 /* ServiceSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceSnapshot.swift; sourceTree = "<group>"; };
@@ -421,6 +423,7 @@
 				7FAFA7A414691A7B5F4A5984 /* StudioDeck.swift */,
 				4CB418CA89B136D759346413 /* StudioRenders.swift */,
 				46D5D70064D9FAD9CF546442 /* StudioShow.swift */,
+				7CFB37C6D43343EFD24F2AA0 /* StudioStages.swift */,
 				87AF6F7A027AB1D46309DD49 /* TerminalTarget.swift */,
 				244A7909EEDA4BFF4C2EA9B5 /* TerminalTarget+AppKit.swift */,
 				B241B043223AFBBFB7418A5E /* UploadCanvasView.swift */,
@@ -751,6 +754,7 @@
 				BE7066BD117E44A73E4E751F /* StudioDeck.swift in Sources */,
 				57FB023CE81AE1F714A93531 /* StudioRenders.swift in Sources */,
 				4D83C96B030D54B4A6338A3C /* StudioShow.swift in Sources */,
+				0894B5C78E527537942D1C7D /* StudioStages.swift in Sources */,
 				9EA178EA395B116336C1FA10 /* TerminalTarget+AppKit.swift in Sources */,
 				1D4CE0CCD2B5A0FFE50C7F06 /* TerminalTarget.swift in Sources */,
 				8551E592C5FFC6A0A7458A26 /* TurnEndPolicy.swift in Sources */,
